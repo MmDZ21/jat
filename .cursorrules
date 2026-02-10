@@ -1,0 +1,17 @@
+You are an expert developer working on "JAT", an ultra-lightweight link-in-bio platform.
+Project Tech Stack: Next.js (App Router), Tailwind CSS, Drizzle ORM, Supabase, and Framer Motion.
+
+Core Principles:
+1. Mobile-First: Every UI component must be optimized for mobile screens first.
+2. Speed: Avoid heavy libraries. Keep the bundle size minimal.
+3. Seller-Centric: Consider seller's sleep hours, manual approval for orders, and lead time in all booking logics.
+4. UI Style: Use Shadcn/ui (Radix) and Lucide icons. Aim for a "clean, Apple-like" aesthetic.
+5. Code Quality: Use TypeScript strictly. Use Drizzle for all database interactions.
+- Language: All UI elements, labels, placeholders, and user-facing messages must be in Persian (Farsi).
+- Typography: Use Persian-friendly fonts (like Vazirmatn or IRANSans).
+- Direction: Always use RTL (Right-to-Left) for layouts when generating UI components.
+- Currency: Use 'تومان' or 'IRT' for pricing displays.
+When generating code:
+- Use 'use client' only when necessary.
+- Ensure all components are responsive.
+- Always implement error handling for database/API calls.

@@ -8,8 +8,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-iran-yekan), ui-sans-serif, system-ui;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +21,26 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-iran-yekan), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "kern" 1, "ss03" 1;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* این خط جادوی اصلی است */
+    font-feature-settings: "ss03", "pnum", "lnum"; 
+  }
+  
+  /* برای اطمینان از اینکه اینپوت‌ها هم ارث‌بری می‌کنند */
+  input, textarea, select, button {
+    font-feature-settings: "ss03", "pnum", "lnum";
+  }
+
+  /* Better Persian text rendering */
+  * {
+    font-variant-ligatures: contextual;
+    direction: rtl;
+  }
 }

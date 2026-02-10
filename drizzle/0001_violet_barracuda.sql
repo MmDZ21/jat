@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "theme_color" text DEFAULT '#3b82f6';

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1770521740724,
+      "tag": "0000_first_vapor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770528094407,
+      "tag": "0001_violet_barracuda",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770593800272,
+      "tag": "0002_salty_squadron_sinister",
+      "breakpoints": true
+    }
+  ]
+}
