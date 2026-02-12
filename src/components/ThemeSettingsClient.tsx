@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { updateThemeSettings } from "@/app/actions/theme";
 import { Palette, CheckCircle2, AlertCircle, Loader2, Sun, Moon } from "lucide-react";
 
@@ -55,6 +56,14 @@ export default function ThemeSettingsClient({
 
   return (
     <div className="max-w-3xl mx-auto p-6" dir="rtl">
+      <div className="mb-4">
+        <Link
+          href="/dashboard"
+          className="text-blue-600 hover:text-blue-700 font-medium transition-colors text-sm"
+        >
+          ← بازگشت به داشبورد
+        </Link>
+      </div>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {/* Header */}
         <div className="border-b border-gray-100 p-6">
@@ -288,12 +297,4 @@ export default function ThemeSettingsClient({
   );
 }
 
-// Helper function to determine contrast color
-function getContrastColor(hexColor: string): string {
-  const hex = hexColor.replace("#", "");
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? "#000000" : "#ffffff";
-}
+import { getContrastColor } from "@/lib/color-utils";

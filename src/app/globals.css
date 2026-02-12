@@ -1,8 +1,56 @@
 @import "tailwindcss";
 
+/* ================================================================
+   JAT Design System — Deep Dark Aesthetic
+   Inspired by Linear, Stripe, Vercel
+   ================================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surface Hierarchy */
+  --bg-base: #09090B;
+  --bg-surface: #111114;
+  --bg-elevated: #18181C;
+  --bg-overlay: #1F1F25;
+  --bg-hover: #26262E;
+  --bg-input: #141418;
+
+  /* Border Treatments */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(139, 92, 246, 0.5);
+
+  /* Typography */
+  --text-primary: #EDEDF0;
+  --text-secondary: #8B8B9E;
+  --text-tertiary: #5C5C70;
+  --text-disabled: #3A3A4A;
+
+  /* Accent — Premium Violet */
+  --accent: #8B5CF6;
+  --accent-hover: #7C3AED;
+  --accent-soft: rgba(139, 92, 246, 0.12);
+  --accent-glow: rgba(139, 92, 246, 0.20);
+  --accent-text: #A78BFA;
+
+  /* Semantic */
+  --success: #34D399;
+  --success-soft: rgba(52, 211, 153, 0.12);
+  --error: #F87171;
+  --error-soft: rgba(248, 113, 113, 0.12);
+  --warning: #FBBF24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+
+  /* Shadows & Glows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-subtle);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border-subtle);
+  --shadow-glow: 0 0 30px var(--accent-glow);
+  --shadow-card: 0 0 0 1px var(--border-subtle), 0 2px 8px rgba(0, 0, 0, 0.2);
+
+  /* Old vars (compatibility) */
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
@@ -11,16 +59,13 @@
   --font-sans: var(--font-iran-yekan), ui-sans-serif, system-ui;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ================================================================
+   Base
+   ================================================================ */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-family: var(--font-iran-yekan), ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-feature-settings: "kern" 1, "ss03" 1;
 }
@@ -29,18 +74,86 @@ body {
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* این خط جادوی اصلی است */
-    font-feature-settings: "ss03", "pnum", "lnum"; 
+    font-feature-settings: "ss03", "pnum", "lnum";
+    scroll-behavior: smooth;
   }
-  
-  /* برای اطمینان از اینکه اینپوت‌ها هم ارث‌بری می‌کنند */
+
   input, textarea, select, button {
     font-feature-settings: "ss03", "pnum", "lnum";
   }
 
-  /* Better Persian text rendering */
   * {
     font-variant-ligatures: contextual;
     direction: rtl;
   }
+
+  /* Custom scrollbar — dark */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* ================================================================
+   Utility classes for the design system
+   ================================================================ */
+
+@layer utilities {
+  .surface {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+  }
+  .surface-elevated {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: 16px;
+  }
+  .glow-accent {
+    box-shadow: var(--shadow-glow);
+  }
+  .text-gradient {
+    background: linear-gradient(135deg, #A78BFA 0%, #EC4899 50%, #F59E0B 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-subtle {
+    background: linear-gradient(135deg, #EDEDF0 0%, #8B8B9E 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .shimmer {
+    background: linear-gradient(90deg, var(--bg-elevated) 0%, var(--bg-overlay) 50%, var(--bg-elevated) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Subtle noise texture overlay */
+.noise::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  z-index: 1;
 }

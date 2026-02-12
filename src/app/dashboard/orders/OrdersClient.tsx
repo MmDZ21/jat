@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { updateOrderStatus } from "@/app/actions/order-actions";
 import { iranYekan } from "@/app/fonts";
+import { toast } from "sonner";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown, Package } from "lucide-react";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 type OrderStatus =
   | "awaiting_approval"
@@ -38,59 +46,73 @@ interface Order {
 
 interface OrdersClientProps {
   orders: Order[];
-  sellerId: string;
 }
 
-// Status configurations with colors and labels
+/* ------------------------------------------------------------------ */
+/*  CSS-var driven status palette                                      */
+/* ------------------------------------------------------------------ */
+
 const statusConfig: Record<
   OrderStatus,
-  { label: string; color: string; bgColor: string; actions: OrderStatus[] }
+  {
+    label: string;
+    color: string;       // foreground (CSS var value)
+    bgColor: string;     // soft bg (CSS var value)
+    dotColor: string;    // solid dot
+    actions: OrderStatus[];
+  }
 > = {
   awaiting_approval: {
     label: "در انتظار تایید",
-    color: "text-yellow-700",
-    bgColor: "bg-yellow-100",
+    color: "var(--warning)",
+    bgColor: "var(--warning-soft)",
+    dotColor: "var(--warning)",
     actions: ["approved", "cancelled"],
   },
   approved: {
     label: "تایید شده",
-    color: "text-blue-700",
-    bgColor: "bg-blue-100",
+    color: "var(--accent)",
+    bgColor: "var(--accent-soft)",
+    dotColor: "var(--accent)",
     actions: ["processing", "cancelled"],
   },
   paid: {
     label: "پرداخت شده",
-    color: "text-green-700",
-    bgColor: "bg-green-100",
+    color: "var(--success)",
+    bgColor: "var(--success-soft)",
+    dotColor: "var(--success)",
     actions: ["processing"],
   },
   processing: {
     label: "در حال آماده‌سازی",
-    color: "text-purple-700",
-    bgColor: "bg-purple-100",
+    color: "var(--accent-text)",
+    bgColor: "var(--accent-soft)",
+    dotColor: "var(--accent-text)",
     actions: ["completed"],
   },
   completed: {
     label: "تکمیل شده",
-    color: "text-green-800",
-    bgColor: "bg-green-200",
+    color: "var(--success)",
+    bgColor: "var(--success-soft)",
+    dotColor: "var(--success)",
     actions: [],
   },
   cancelled: {
     label: "لغو شده",
-    color: "text-red-700",
-    bgColor: "bg-red-100",
+    color: "var(--error)",
+    bgColor: "var(--error-soft)",
+    dotColor: "var(--error)",
     actions: [],
   },
   refunded: {
     label: "بازگشت وجه",
-    color: "text-orange-700",
-    bgColor: "bg-orange-100",
+    color: "var(--warning)",
+    bgColor: "var(--warning-soft)",
+    dotColor: "var(--warning)",
     actions: [],
   },
 };
 
-// Action button labels
 const actionLabels: Record<OrderStatus, string> = {
   awaiting_approval: "در انتظار تایید",
   approved: "تایید سفارش",
@@ -101,20 +123,60 @@ const actionLabels: Record<OrderStatus, string> = {
   refunded: "بازگشت وجه",
 };
 
-export default function OrdersClient({ orders, sellerId }: OrdersClientProps) {
+/* ------------------------------------------------------------------ */
+/*  Motion variants                                                    */
+/* ------------------------------------------------------------------ */
+
+const listVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 18 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] as const },
+  },
+};
+
+const expandVariants = {
+  collapsed: { height: 0, opacity: 0 },
+  expanded: {
+    height: "auto",
+    opacity: 1,
+    transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] as const },
+  },
+  exit: {
+    height: 0,
+    opacity: 0,
+    transition: { duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] as const },
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export default function OrdersClient({ orders }: OrdersClientProps) {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
+
+  /* ---------- handlers (preserved) ---------- */
 
   const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
     setIsUpdating(orderId);
     try {
       const result = await updateOrderStatus(orderId, newStatus);
-      if (!result.success) {
-        alert(result.error || "خطا در به‌روزرسانی وضعیت");
+      if (result.success) {
+        toast.success("وضعیت سفارش به‌روزرسانی شد");
+      } else {
+        toast.error(result.error || "خطا در به‌روزرسانی وضعیت");
       }
     } catch (error) {
       console.error("Error updating status:", error);
-      alert("خطا در به‌روزرسانی وضعیت");
+      toast.error("خطا در به‌روزرسانی وضعیت");
     } finally {
       setIsUpdating(null);
     }
@@ -139,96 +201,331 @@ export default function OrdersClient({ orders, sellerId }: OrdersClientProps) {
     return new Intl.NumberFormat("fa-IR").format(parseFloat(price));
   };
 
+  /* ---------- render ---------- */
+
   return (
     <div
-      className={`min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8 px-4 ${iranYekan.variable} font-sans`}
-      style={{ fontFamily: "var(--font-iran-yekan)" }}
+      dir="rtl"
+      className={`${iranYekan.variable}`}
+      style={{
+        fontFamily: "var(--font-iran-yekan), system-ui, sans-serif",
+        background: "var(--bg-base)",
+        minHeight: "100vh",
+        padding: "2rem 1rem",
+
+        /* ---- design-system tokens ---- */
+        "--bg-base": "#0A0A0F",
+        "--bg-surface": "#12121A",
+        "--bg-elevated": "#1A1A25",
+        "--bg-overlay": "#22222E",
+        "--bg-hover": "#16161F",
+        "--bg-input": "#14141D",
+        "--border-subtle": "rgba(255,255,255,0.06)",
+        "--border-default": "rgba(255,255,255,0.08)",
+        "--border-strong": "rgba(255,255,255,0.12)",
+        "--text-primary": "#EDEDF0",
+        "--text-secondary": "#8B8B9E",
+        "--text-tertiary": "#5C5C70",
+        "--accent": "#8B5CF6",
+        "--accent-soft": "rgba(139,92,246,0.12)",
+        "--accent-text": "#A78BFA",
+        "--success": "#34D399",
+        "--success-soft": "rgba(52,211,153,0.12)",
+        "--error": "#F87171",
+        "--error-soft": "rgba(248,113,113,0.12)",
+        "--warning": "#FBBF24",
+        "--warning-soft": "rgba(251,191,36,0.12)",
+      } as React.CSSProperties}
     >
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        {/* ================= HEADER ================= */}
+        <header style={{ marginBottom: "2.5rem" }}>
+          <Link
+            href="/dashboard"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              color: "var(--accent-text)",
+              fontSize: 14,
+              fontWeight: 500,
+              textDecoration: "none",
+              marginBottom: 16,
+              transition: "opacity .15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            ← بازگشت به داشبورد
+          </Link>
+
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: "var(--text-primary)",
+              margin: 0,
+              marginBottom: 6,
+            }}
+          >
             مدیریت سفارش‌ها
           </h1>
-          <p className="text-gray-600">
+          <p
+            style={{
+              fontSize: 14,
+              color: "var(--text-secondary)",
+              margin: 0,
+            }}
+          >
             مجموع {orders.length} سفارش
           </p>
-        </div>
+        </header>
 
-        {/* Orders List */}
+        {/* ================= EMPTY STATE ================= */}
         {orders.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <div className="text-gray-400 text-6xl mb-4">📦</div>
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 20,
+              padding: "4rem 2rem",
+              textAlign: "center",
+            }}
+          >
+            <Package
+              size={56}
+              style={{ color: "var(--text-tertiary)", margin: "0 auto 16px" }}
+              strokeWidth={1.4}
+            />
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: "var(--text-primary)",
+                margin: "0 0 8px",
+              }}
+            >
               هنوز سفارشی ندارید
             </h2>
-            <p className="text-gray-500">
+            <p
+              style={{
+                fontSize: 14,
+                color: "var(--text-secondary)",
+                margin: 0,
+                maxWidth: 320,
+                marginInline: "auto",
+                lineHeight: 1.7,
+              }}
+            >
               وقتی مشتریان سفارش ثبت کنند، اینجا نمایش داده می‌شود
             </p>
-          </div>
+          </motion.div>
         ) : (
-          <div className="space-y-4">
+          /* ================= ORDERS LIST ================= */
+          <motion.div
+            variants={listVariants}
+            initial="hidden"
+            animate="visible"
+            style={{ display: "flex", flexDirection: "column", gap: 16 }}
+          >
             {orders.map((order) => {
               const config = statusConfig[order.status];
               const isExpanded = expandedOrder === order.id;
               const isLoading = isUpdating === order.id;
 
               return (
-                <div
+                <motion.div
                   key={order.id}
-                  className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
+                  variants={cardVariants}
+                  layout
+                  style={{
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 16,
+                    overflow: "hidden",
+                    transition: "border-color .2s, background .2s",
+                  }}
+                  whileHover={{
+                    borderColor: "rgba(255,255,255,0.10)",
+                    background: "var(--bg-hover)",
+                  }}
                 >
-                  {/* Main Card Content */}
-                  <div className="p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                      {/* Order Number & Status */}
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-bold text-gray-900">
-                          {order.orderNumber}
-                        </h3>
+                  {/* ---------- Card body ---------- */}
+                  <div style={{ padding: "1.5rem" }}>
+                    {/* Row 1: order number + status  |  total */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <span
-                          className={`px-3 py-1 rounded-full text-sm font-medium ${config.color} ${config.bgColor}`}
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 700,
+                            color: "var(--text-primary)",
+                          }}
                         >
+                          {order.orderNumber}
+                        </span>
+
+                        {/* Status badge */}
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "4px 12px",
+                            borderRadius: 999,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: config.color,
+                            background: config.bgColor,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: config.dotColor,
+                              flexShrink: 0,
+                            }}
+                          />
                           {config.label}
                         </span>
                       </div>
 
-                      {/* Total Price */}
-                      <div className="text-left sm:text-right">
-                        <p className="text-sm text-gray-500">مبلغ کل</p>
-                        <p className="text-xl font-bold text-gray-900">
-                          {formatPrice(order.totalAmount)} تومان
+                      {/* Total */}
+                      <div style={{ textAlign: "left" }}>
+                        <p
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text-tertiary)",
+                            margin: 0,
+                            marginBottom: 2,
+                          }}
+                        >
+                          مبلغ کل
+                        </p>
+                        <p
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 800,
+                            color: "var(--text-primary)",
+                            margin: 0,
+                          }}
+                        >
+                          {formatPrice(order.totalAmount)}{" "}
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            تومان
+                          </span>
                         </p>
                       </div>
                     </div>
 
-                    {/* Customer Info */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-500">👤</span>
-                        <span className="text-gray-700">{order.customerName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-500">📅</span>
-                        <span className="text-gray-600 text-sm">
-                          {formatDate(order.createdAt)}
+                    {/* Row 2: customer + date */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 10,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 13,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <span style={{ fontSize: 15, opacity: 0.7 }}>👤</span>
+                        <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                          {order.customerName}
                         </span>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 13,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <span style={{ fontSize: 15, opacity: 0.7 }}>📅</span>
+                        <span>{formatDate(order.createdAt)}</span>
                       </div>
                     </div>
 
-                    {/* Order Items Summary */}
-                    <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                      <p className="text-sm text-gray-600 mb-2">آیتم‌های سفارش:</p>
-                      <div className="space-y-1">
+                    {/* Row 3: order items summary */}
+                    <div
+                      style={{
+                        background: "var(--bg-elevated)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: 12,
+                        padding: "12px 16px",
+                        marginBottom: 16,
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--text-tertiary)",
+                          margin: "0 0 8px",
+                        }}
+                      >
+                        آیتم‌های سفارش
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {order.orderItems.map((item) => (
                           <div
                             key={item.id}
-                            className="flex justify-between text-sm"
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              fontSize: 13,
+                            }}
                           >
-                            <span className="text-gray-700">
-                              {item.itemName} (×{item.quantity})
+                            <span style={{ color: "var(--text-primary)" }}>
+                              {item.itemName}{" "}
+                              <span style={{ color: "var(--text-tertiary)" }}>
+                                (×{item.quantity})
+                              </span>
                             </span>
-                            <span className="text-gray-600 font-medium">
+                            <span
+                              style={{
+                                color: "var(--text-secondary)",
+                                fontWeight: 600,
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
                               {formatPrice(item.subtotal)} تومان
                             </span>
                           </div>
@@ -236,33 +533,97 @@ export default function OrdersClient({ orders, sellerId }: OrdersClientProps) {
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2">
-                      {/* Details Toggle Button */}
+                    {/* Row 4: action buttons */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      {/* Details toggle */}
                       <button
                         onClick={() => toggleDetails(order.id)}
-                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors text-sm"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "10px 18px",
+                          minHeight: 44,
+                          borderRadius: 12,
+                          border: "1px solid var(--border-default)",
+                          background: "var(--bg-elevated)",
+                          color: "var(--text-secondary)",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "all .2s",
+                          fontFamily: "inherit",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--bg-overlay)";
+                          e.currentTarget.style.borderColor = "var(--border-strong)";
+                          e.currentTarget.style.color = "var(--text-primary)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "var(--bg-elevated)";
+                          e.currentTarget.style.borderColor = "var(--border-default)";
+                          e.currentTarget.style.color = "var(--text-secondary)";
+                        }}
                       >
                         {isExpanded ? "بستن جزئیات" : "مشاهده جزئیات"}
+                        <motion.span
+                          animate={{ rotate: isExpanded ? 180 : 0 }}
+                          transition={{ duration: 0.25 }}
+                          style={{ display: "flex" }}
+                        >
+                          <ChevronDown size={16} />
+                        </motion.span>
                       </button>
 
-                      {/* Status Update Actions */}
+                      {/* Status action buttons */}
                       {config.actions.map((action) => {
-                        const actionConfig = statusConfig[action];
+                        const actionStatusConfig = statusConfig[action];
+                        const isCancelOrError = action === "cancelled" || action === "refunded";
+
                         return (
                           <button
                             key={action}
                             onClick={() => handleStatusUpdate(order.id, action)}
                             disabled={isLoading}
-                            className={`px-4 py-2 rounded-lg font-medium transition-all text-sm ${
-                              isLoading
-                                ? "bg-gray-300 cursor-not-allowed"
-                                : action === "cancelled"
-                                ? "bg-red-500 hover:bg-red-600 text-white"
-                                : action === "completed"
-                                ? "bg-green-500 hover:bg-green-600 text-white"
-                                : "bg-blue-500 hover:bg-blue-600 text-white"
-                            }`}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              padding: "10px 20px",
+                              minHeight: 44,
+                              borderRadius: 12,
+                              border: "none",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              cursor: isLoading ? "not-allowed" : "pointer",
+                              transition: "all .2s",
+                              fontFamily: "inherit",
+                              background: isLoading
+                                ? "var(--bg-overlay)"
+                                : isCancelOrError
+                                  ? "var(--error-soft)"
+                                  : actionStatusConfig.bgColor,
+                              color: isLoading
+                                ? "var(--text-tertiary)"
+                                : isCancelOrError
+                                  ? "var(--error)"
+                                  : actionStatusConfig.color,
+                              opacity: isLoading ? 0.6 : 1,
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isLoading) e.currentTarget.style.opacity = "0.8";
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isLoading) e.currentTarget.style.opacity = "1";
+                            }}
                           >
                             {isLoading ? "در حال بروزرسانی..." : actionLabels[action]}
                           </button>
@@ -271,45 +632,139 @@ export default function OrdersClient({ orders, sellerId }: OrdersClientProps) {
                     </div>
                   </div>
 
-                  {/* Expanded Details */}
-                  {isExpanded && (
-                    <div className="border-t border-gray-200 bg-gray-50 p-6">
-                      <h4 className="text-lg font-semibold text-gray-800 mb-4">
-                        اطلاعات تماس و ارسال
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">شماره تماس</p>
-                          <p className="text-gray-800 font-medium">
-                            {order.customerPhone}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-500 mb-1">ایمیل</p>
-                          <p className="text-gray-800 font-medium">
-                            {order.customerEmail || "—"}
-                          </p>
-                        </div>
-                        {order.shippingAddress && (
-                          <div className="md:col-span-2">
-                            <p className="text-sm text-gray-500 mb-1">آدرس ارسال</p>
-                            <p className="text-gray-800">
-                              {order.shippingAddress}
-                            </p>
-                            {order.postalCode && (
-                              <p className="text-gray-600 text-sm mt-1">
-                                کد پستی: {order.postalCode}
+                  {/* ---------- Expanded details ---------- */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        key="details"
+                        variants={expandVariants}
+                        initial="collapsed"
+                        animate="expanded"
+                        exit="exit"
+                        style={{ overflow: "hidden" }}
+                      >
+                        <div
+                          style={{
+                            borderTop: "1px solid var(--border-subtle)",
+                            background: "var(--bg-elevated)",
+                            padding: "1.5rem",
+                          }}
+                        >
+                          <h4
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 700,
+                              color: "var(--text-primary)",
+                              margin: "0 0 16px",
+                            }}
+                          >
+                            اطلاعات تماس و ارسال
+                          </h4>
+
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                              gap: 20,
+                            }}
+                          >
+                            {/* Phone */}
+                            <div>
+                              <p
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--text-tertiary)",
+                                  margin: "0 0 4px",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                شماره تماس
                               </p>
+                              <p
+                                style={{
+                                  fontSize: 14,
+                                  color: "var(--text-primary)",
+                                  fontWeight: 600,
+                                  margin: 0,
+                                  direction: "ltr",
+                                  textAlign: "right",
+                                }}
+                              >
+                                {order.customerPhone}
+                              </p>
+                            </div>
+
+                            {/* Email */}
+                            <div>
+                              <p
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--text-tertiary)",
+                                  margin: "0 0 4px",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                ایمیل
+                              </p>
+                              <p
+                                style={{
+                                  fontSize: 14,
+                                  color: "var(--text-primary)",
+                                  fontWeight: 600,
+                                  margin: 0,
+                                  direction: "ltr",
+                                  textAlign: "right",
+                                }}
+                              >
+                                {order.customerEmail || "—"}
+                              </p>
+                            </div>
+
+                            {/* Address */}
+                            {order.shippingAddress && (
+                              <div style={{ gridColumn: "1 / -1" }}>
+                                <p
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-tertiary)",
+                                    margin: "0 0 4px",
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  آدرس ارسال
+                                </p>
+                                <p
+                                  style={{
+                                    fontSize: 14,
+                                    color: "var(--text-primary)",
+                                    margin: 0,
+                                    lineHeight: 1.7,
+                                  }}
+                                >
+                                  {order.shippingAddress}
+                                </p>
+                                {order.postalCode && (
+                                  <p
+                                    style={{
+                                      fontSize: 13,
+                                      color: "var(--text-secondary)",
+                                      margin: "6px 0 0",
+                                    }}
+                                  >
+                                    کد پستی: {order.postalCode}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

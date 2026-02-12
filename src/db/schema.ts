@@ -48,9 +48,15 @@ export const profiles = pgTable("profiles", {
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
   
+  // Shop Settings (Onboarding)
+  shopName: varchar("shop_name", { length: 100 }), // Display name for shop
+  shopSlug: varchar("shop_slug", { length: 50 }).unique(), // URL slug (e.g., jat.ir/shik_shop)
+  onboardingCompleted: boolean("onboarding_completed").default(false), // Track if user completed onboarding
+  
   // Contact & Social
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 20 }),
+  instagramUsername: varchar("instagram_username", { length: 50 }), // Primary Instagram account for imports
   socialLinks: jsonb("social_links").$type<{
     instagram?: string;
     twitter?: string;
@@ -142,7 +148,7 @@ export const items = pgTable("items", {
 
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
-  orderNumber: varchar("order_number", { length: 20 }).notNull().unique(), // e.g., "JAT-20260208-001"
+  orderNumber: varchar("order_number", { length: 30 }).notNull().unique(), // e.g., "JAT-20260211-7D209625"
   
   sellerId: uuid("seller_id")
     .notNull()

@@ -1,53 +1,48 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { Package, Briefcase, Clock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Package, Briefcase, Clock, ShoppingCart, X, Trash2, Plus, Minus, AlertCircle, Search } from "lucide-react";
+import { toast } from "sonner";
 import type { Profile, Item } from "@/db/schema";
-import CheckoutModal from "@/components/CheckoutModal";
+import { useCart } from "@/store/useCart";
 
 interface ProfileClientProps {
   profile: Profile & { items: Item[] };
   products: Item[];
   services: Item[];
+  paymentStatus?: string;
 }
 
-// Helper function to determine if text should be white or black based on background color
-function getContrastColor(hexColor: string): string {
-  // Remove # if present
-  const hex = hexColor.replace("#", "");
-  
-  // Convert to RGB
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  
-  // Calculate luminance
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  
-  // Return white for dark backgrounds, black for light backgrounds
-  return luminance > 0.5 ? "#000000" : "#ffffff";
-}
+import { getContrastColor, lightenColor } from "@/lib/color-utils";
 
-// Helper to create lighter shade for shadows
-function lightenColor(hexColor: string, amount: number = 0.3): string {
-  const hex = hexColor.replace("#", "");
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  
-  const newR = Math.min(255, r + (255 - r) * amount);
-  const newG = Math.min(255, g + (255 - g) * amount);
-  const newB = Math.min(255, b + (255 - b) * amount);
-  
-  return `#${Math.round(newR).toString(16).padStart(2, "0")}${Math.round(newG).toString(16).padStart(2, "0")}${Math.round(newB).toString(16).padStart(2, "0")}`;
-}
+export default function ProfileClient({ profile, products, services, paymentStatus }: ProfileClientProps) {
+  const router = useRouter();
 
-export default function ProfileClient({ profile, products, services }: ProfileClientProps) {
   const [activeTab, setActiveTab] = useState<"products" | "services">("products");
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Checkout form state
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isPlacingOrder, startPlaceOrder] = useTransition();
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
+
+  const cartItems = useCart((state) => state.items);
+  const cartSellerId = useCart((state) => state.sellerId);
+  const addItemToCart = useCart((state) => state.addItem);
+  const removeItemFromCart = useCart((state) => state.removeItem);
+  const updateCartQuantity = useCart((state) => state.updateQuantity);
+  const clearCart = useCart((state) => state.clearCart);
+  const cartTotalAmount = useCart((state) => state.totalAmount);
 
   const themeColor = profile.themeColor || "#3b82f6";
   const backgroundMode = (profile.backgroundMode as "light" | "dark") || "light";
@@ -63,23 +58,35 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
     return lightenColor(themeColor, 0.6);
   }, [themeColor, backgroundMode]);
   
-  // Background colors based on mode
+  // Background colors based on mode — premium palette
   const bgColors = {
     light: {
       primary: "#ffffff",
-      secondary: "#f9fafb",
-      gradient: "from-gray-50 to-white",
+      secondary: "#f8f9fb",
+      gradient: "from-gray-50/80 to-white",
       text: "#111827",
       textSecondary: "#6b7280",
+      textTertiary: "#9ca3af",
       border: "#e5e7eb",
+      card: "#ffffff",
+      cardHover: "#f9fafb",
+      input: "#f9fafb",
+      overlay: "rgba(0,0,0,0.4)",
+      drawer: "#ffffff",
     },
     dark: {
-      primary: "#1f2937",
-      secondary: "#111827",
-      gradient: "from-gray-900 to-gray-800",
-      text: "#f9fafb",
-      textSecondary: "#9ca3af",
-      border: "#374151",
+      primary: "#0F1117",
+      secondary: "#0A0C12",
+      gradient: "from-[#0A0C12] to-[#0F1117]",
+      text: "#E8E8ED",
+      textSecondary: "#8B8BA0",
+      textTertiary: "#5C5C70",
+      border: "rgba(255,255,255,0.08)",
+      card: "#161822",
+      cardHover: "#1C1E2E",
+      input: "#12141C",
+      overlay: "rgba(0,0,0,0.6)",
+      drawer: "#111318",
     },
   };
   
@@ -91,15 +98,99 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
     return new Intl.NumberFormat("fa-IR").format(numPrice);
   }, []);
 
-  const handleItemClick = (item: Item) => {
-    setSelectedItem(item);
-    setIsModalOpen(true);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const handleAddToCart = (item: Item) => {
+    // Block adding out-of-stock products
+    if (item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0)) {
+      return;
+    }
+
+    // Enforce single-seller cart
+    if (cartSellerId && cartSellerId !== profile.id) {
+      const confirmClear = window.confirm(
+        "سبد خرید شما مربوط به فروشگاه دیگری است. آیا می‌خواهید سبد را خالی کرده و از این فروشگاه شروع کنید؟"
+      );
+      if (!confirmClear) return;
+      clearCart();
+    }
+
+    // Check stock limit before adding
+    if (item.type === "product" && item.stockQuantity !== null) {
+      const existingCartItem = cartItems.find((ci) => ci.id === item.id);
+      const currentQty = existingCartItem ? existingCartItem.quantity : 0;
+      if (currentQty >= item.stockQuantity) {
+        return; // Already at max stock
+      }
+    }
+
+    addItemToCart({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      image: item.imageUrl,
+      sellerId: profile.id,
+    });
+
+    setJustAddedId(item.id);
+    setTimeout(() => setJustAddedId(null), 1500);
+    setIsCartOpen(true);
+    setIsCheckingOut(false);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    // Wait for animation before clearing item
-    setTimeout(() => setSelectedItem(null), 200);
+  const handleStartCheckout = () => {
+    setIsCheckingOut(true);
+    setCheckoutError(null);
+  };
+
+  const handleBackToCart = () => {
+    setIsCheckingOut(false);
+    setCheckoutError(null);
+  };
+
+  const handlePlaceOrder = () => {
+    if (cartItems.length === 0) return;
+
+    setCheckoutError(null);
+
+    startPlaceOrder(async () => {
+      try {
+        const { createOrder } = await import("@/app/actions/shop-checkout");
+
+        const result = await createOrder({
+          sellerId: profile.id,
+          shopSlug: profile.shopSlug || profile.username,
+          customerName,
+          customerEmail,
+          customerPhone,
+          shippingAddress,
+          items: cartItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+        });
+
+        if (!result.success || !result.orderId) {
+          const msg = result.error || "خطایی در ثبت سفارش رخ داد";
+          setCheckoutError(msg);
+          toast.error(msg);
+          return;
+        }
+
+        toast.success("سفارش ثبت شد! در حال انتقال به درگاه پرداخت...");
+        // Redirect to mock payment page
+        router.push(`/checkout/mock-payment/${result.orderId}`);
+      } catch (error) {
+        console.error("Error placing order:", error);
+        const msg = "خطایی در ثبت سفارش رخ داد. لطفاً دوباره تلاش کنید.";
+        setCheckoutError(msg);
+        toast.error(msg);
+      }
+    });
   };
 
   return (
@@ -108,7 +199,20 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
       dir="rtl"
     >
       <div className="max-w-2xl mx-auto px-4 py-8 md:py-12">
-        {/* Profile Header */}
+        {/* Payment error banner (from failed mock payment) */}
+        {paymentStatus === "failed" && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 rounded-2xl bg-red-50 border border-red-200 p-4 flex items-center gap-2"
+          >
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <p className="text-sm text-red-700">
+              پرداخت انجام نشد. لطفاً دوباره تلاش کنید یا روش پرداخت دیگری را امتحان کنید.
+            </p>
+          </motion.div>
+        )}
+        {/* Shop Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -123,7 +227,10 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
                 background: `linear-gradient(to bottom right, ${themeColor}, ${lightenColor(themeColor, 0.2)})`,
               }}
             >
-              <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center overflow-hidden relative">
+              <div
+                className="w-full h-full rounded-full flex items-center justify-center overflow-hidden relative"
+                style={{ backgroundColor: backgroundMode === "dark" ? "#1C1E2E" : "#f3f4f6" }}
+              >
                 {profile.avatarUrl ? (
                   <Image
                     src={profile.avatarUrl}
@@ -142,71 +249,80 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
             </div>
           </div>
 
-          {/* Display Name */}
+          {/* Shop Name */}
           <h1 
             className="text-2xl md:text-3xl font-bold mb-2"
             style={{ color: colors.text }}
           >
-            {profile.displayName || profile.username}
+            {profile.shopName || profile.displayName || profile.username}
           </h1>
 
-          {/* Username */}
-          <p 
-            className="text-sm mb-3"
-            style={{ color: colors.textSecondary }}
-          >
-            @{profile.username}
-          </p>
-
-          {/* Bio */}
-          {profile.bio && (
-            <p 
-              className="text-base leading-relaxed max-w-md mb-4"
-              style={{ color: colors.textSecondary }}
-            >
+          {/* Shop Bio */}
+          {profile.bio && !profile.vacationMode && (
+            <p className="text-sm max-w-md mb-4" style={{ color: colors.textSecondary }}>
               {profile.bio}
             </p>
           )}
 
-          {/* Vacation Mode Banner */}
+          {/* Vacation Mode: show "Shop temporarily closed" instead of small banner when full closed */}
           {profile.vacationMode && (
-            <div className="w-full max-w-md bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-              <p className="text-sm text-amber-800 flex items-center justify-center gap-2">
-                <Clock className="w-4 h-4" />
-                {profile.vacationMessage || "در حال حاضر در حالت تعطیلات هستیم"}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-md rounded-2xl border-2 p-8 text-center"
+              style={{
+                backgroundColor: `${colors.primary}`,
+                borderColor: colors.border,
+              }}
+            >
+              <div
+                className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: `${themeColor}20` }}
+              >
+                <Clock className="w-10 h-10" style={{ color: themeColor }} />
+              </div>
+              <h2 className="text-xl font-bold mb-2" style={{ color: colors.text }}>
+                فروشگاه موقتاً بسته است
+              </h2>
+              <p className="text-sm" style={{ color: colors.textSecondary }}>
+                {profile.vacationMessage || "به زودی برمی‌گردیم. از شکیبایی شما سپاسگزاریم."}
               </p>
-            </div>
+            </motion.div>
           )}
 
-          {/* Contact Info */}
-          {(profile.email || profile.phone) && (
-            <div 
-              className="flex flex-wrap items-center justify-center gap-3 text-sm"
-              style={{ color: colors.textSecondary }}
-            >
-              {profile.email && (
-                <a
-                  href={`mailto:${profile.email}`}
-                  className="hover:opacity-80 transition-opacity"
-                  style={{ color: themeColor }}
-                >
-                  {profile.email}
-                </a>
-              )}
-              {profile.phone && (
-                <a
-                  href={`tel:${profile.phone}`}
-                  className="hover:opacity-80 transition-opacity"
-                  style={{ color: themeColor }}
-                >
-                  {profile.phone}
-                </a>
-              )}
-            </div>
-          )}
         </motion.div>
 
-        {/* Tab Toggle */}
+        {/* Search + Tab Toggle + Items - hide when shop is closed */}
+        {!profile.vacationMode && (
+        <>
+        {/* Search Bar */}
+        {(products.length + services.length) > 3 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.05 }}
+            className="mb-4"
+          >
+            <div className="relative">
+              <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.textSecondary }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="جستجوی محصول یا خدمت..."
+                className="w-full pr-11 pl-4 py-3 rounded-2xl border outline-none transition-all text-sm focus:ring-2"
+                style={{
+                  backgroundColor: colors.input,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  // @ts-expect-error -- ring color via CSS
+                  "--tw-ring-color": `${themeColor}40`,
+                }}
+              />
+            </div>
+          </motion.div>
+        )}
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -220,7 +336,7 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
         >
           <button
             onClick={() => setActiveTab("products")}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all"
+            className="flex-1 flex items-center justify-center gap-2 min-h-[44px] py-3 px-4 rounded-xl font-medium transition-all duration-200 active:scale-[0.98]"
             style={{
               backgroundColor: activeTab === "products" ? themeColor : "transparent",
               color: activeTab === "products" ? textColor : colors.textSecondary,
@@ -249,7 +365,7 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
           </button>
           <button
             onClick={() => setActiveTab("services")}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all"
+            className="flex-1 flex items-center justify-center gap-2 min-h-[44px] py-3 px-4 rounded-xl font-medium transition-all duration-200 active:scale-[0.98]"
             style={{
               backgroundColor: activeTab === "services" ? themeColor : "transparent",
               color: activeTab === "services" ? textColor : colors.textSecondary,
@@ -281,7 +397,13 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
         {/* Items List */}
         <div className="relative grid">
           {(["products", "services"] as const).map((tab) => {
-            const tabItems = tab === "products" ? products : services;
+            const allTabItems = tab === "products" ? products : services;
+            const tabItems = searchQuery.trim()
+              ? allTabItems.filter((item) =>
+                  item.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+                  (item.description || "").toLowerCase().includes(searchQuery.trim().toLowerCase())
+                )
+              : allTabItems;
             const isActive = activeTab === tab;
 
             return (
@@ -322,29 +444,30 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
               tabItems.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => handleItemClick(item)}
-                  className="rounded-2xl p-5 border transition-all cursor-pointer group"
+                  className="rounded-2xl p-5 border transition-all duration-200 cursor-pointer group overflow-hidden"
                   style={{
-                    backgroundColor: colors.primary,
+                    backgroundColor: colors.card,
                     borderColor: colors.border,
-                    boxShadow: backgroundMode === "dark" 
-                      ? "0 1px 3px 0 rgba(0, 0, 0, 0.3)" 
-                      : "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
+                    boxShadow: backgroundMode === "dark"
+                      ? `0 0 0 1px ${colors.border}, 0 2px 8px rgba(0,0,0,0.3)`
+                      : "0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0,0,0,0.04)",
                   }}
                   onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = colors.cardHover;
+                    e.currentTarget.style.borderColor = `${themeColor}60`;
                     e.currentTarget.style.boxShadow = backgroundMode === "dark"
-                      ? "0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)"
-                      : "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
-                    e.currentTarget.style.borderColor = themeColor;
+                      ? `0 0 0 1px ${themeColor}30, 0 4px 12px rgba(0,0,0,0.4)`
+                      : `0 4px 12px rgba(0,0,0,0.08), 0 0 0 1px ${themeColor}30`;
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = backgroundMode === "dark"
-                      ? "0 1px 3px 0 rgba(0, 0, 0, 0.3)"
-                      : "0 1px 3px 0 rgba(0, 0, 0, 0.1)";
+                    e.currentTarget.style.backgroundColor = colors.card;
                     e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.boxShadow = backgroundMode === "dark"
+                      ? `0 0 0 1px ${colors.border}, 0 2px 8px rgba(0,0,0,0.3)`
+                      : "0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0,0,0,0.04)";
                   }}
                 >
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 overflow-hidden">
                     {/* Image */}
                     {item.imageUrl && (
                       <div 
@@ -362,32 +485,28 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
                     )}
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Name & Price */}
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <h3 
-                          className="font-bold text-gray-900 transition-colors"
-                          style={{
-                            color: `rgb(${parseInt(themeColor.slice(1, 3), 16)}, ${parseInt(themeColor.slice(3, 5), 16)}, ${parseInt(themeColor.slice(5, 7), 16)})`,
-                          }}
-                        >
-                          {item.name}
-                        </h3>
-                        <div className="shrink-0">
-                          <p 
-                            className="font-bold whitespace-nowrap"
-                            style={{ color: themeColor }}
-                          >
-                            {formatPrice(item.price)} تومان
-                          </p>
-                        </div>
-                      </div>
+                    <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                      {/* Name */}
+                      <h3 
+                        className="font-bold text-lg mb-2 wrap-break-word"
+                        style={{ 
+                          color: colors.text,
+                          overflowWrap: "break-word",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {item.name}
+                      </h3>
 
                       {/* Description */}
                       {item.description && (
                         <p 
-                          className="text-sm line-clamp-2 mb-3"
-                          style={{ color: colors.textSecondary }}
+                          className="text-sm line-clamp-2 mb-3 wrap-break-word"
+                          style={{ 
+                            color: colors.textSecondary,
+                            overflowWrap: "break-word",
+                            wordBreak: "break-word",
+                          }}
                         >
                           {item.description}
                         </p>
@@ -395,7 +514,7 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
 
                       {/* Meta Info */}
                       <div 
-                        className="flex flex-wrap items-center gap-3 text-xs"
+                        className="flex flex-wrap items-center gap-3 text-xs mb-3"
                         style={{ color: colors.textSecondary }}
                       >
                         {/* Product: Stock */}
@@ -427,7 +546,7 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
 
                         {/* Tags */}
                         {item.tags && Array.isArray(item.tags) && item.tags.length > 0 && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             {item.tags.slice(0, 2).map((tag, i) => (
                               <span
                                 key={i}
@@ -443,6 +562,39 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
                           </div>
                         )}
                       </div>
+
+                      {/* Price + Add to Cart */}
+                      <div className="mt-auto pt-2 border-t" style={{ borderColor: colors.border }}>
+                        <div className="flex items-center justify-between gap-3 pt-2">
+                          <p 
+                            className="font-bold text-base"
+                            style={{ color: themeColor }}
+                          >
+                            {formatPrice(item.price)} تومان
+                          </p>
+                          {item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0) ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-300 text-gray-500 cursor-not-allowed"
+                            >
+                              ناموجود
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAddToCart(item)}
+                              className="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
+                              style={{
+                                backgroundColor: themeColor,
+                                color: textColor,
+                              }}
+                            >
+                              {justAddedId === item.id ? "✓ افزوده شد" : "افزودن به سبد"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -452,6 +604,8 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
             );
           })}
         </div>
+        </>
+        )}
 
         {/* Footer */}
         <motion.div
@@ -472,17 +626,345 @@ export default function ProfileClient({ profile, products, services }: ProfileCl
         </motion.div>
       </div>
 
-      {/* Checkout Modal */}
-      {selectedItem && (
-        <CheckoutModal
-          item={selectedItem}
-          sellerId={profile.id}
-          themeColor={themeColor}
-          textColor={textColor}
-          isOpen={isModalOpen}
-          onClose={handleCloseModal}
-        />
+      {/* Floating Cart Button - hidden when shop is closed */}
+      {!profile.vacationMode && (
+      <motion.button
+        type="button"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.2 }}
+        onClick={() => {
+          setIsCartOpen(true);
+          setIsCheckingOut(false);
+        }}
+        className="fixed bottom-5 right-5 z-40 flex items-center justify-center w-14 h-14 rounded-full text-white shadow-xl transition-transform duration-150 active:scale-95"
+        style={{
+          backgroundColor: themeColor,
+          color: textColor,
+          boxShadow: `0 10px 25px -5px ${themeColor}50, 0 8px 10px -6px ${themeColor}40`,
+        }}
+      >
+        <ShoppingCart className="w-6 h-6" />
+        {mounted && cartItems.length > 0 && (
+          <span
+            className="absolute -top-1 -left-1 min-w-[22px] h-[22px] rounded-full text-xs font-bold flex items-center justify-center px-1"
+            style={{ backgroundColor: themeColor, color: textColor }}
+          >
+            {cartItems.reduce((sum, item) => sum + item.quantity, 0)}
+          </span>
+        )}
+      </motion.button>
       )}
+
+      {/* Cart Sidebar */}
+      <AnimatePresence>
+        {isCartOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40"
+              style={{ backgroundColor: colors.overlay }}
+              onClick={() => {
+                if (!isPlacingOrder) {
+                  setIsCartOpen(false);
+                  setIsCheckingOut(false);
+                }
+              }}
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 260, damping: 30 }}
+              className="fixed inset-y-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col"
+              dir="rtl"
+              style={{
+                backgroundColor: colors.drawer,
+                boxShadow: backgroundMode === "dark"
+                  ? "-4px 0 30px rgba(0,0,0,0.5)"
+                  : "-4px 0 30px rgba(0,0,0,0.1)",
+              }}
+            >
+              {/* Header */}
+              <div
+                className="flex items-center justify-between px-4 py-3 border-b"
+                style={{ borderColor: colors.border }}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    style={{ backgroundColor: `${themeColor}20` }}
+                  >
+                    <ShoppingCart className="w-5 h-5" style={{ color: themeColor }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: colors.text }}>
+                      {isCheckingOut ? "تکمیل اطلاعات ارسال" : "سبد خرید"}
+                    </p>
+                    {!isCheckingOut && (
+                      <p className="text-xs" style={{ color: colors.textSecondary }}>
+                        {cartItems.length === 0
+                          ? "هیچ محصولی در سبد شما نیست"
+                          : `${cartItems.length} آیتم در سبد خرید`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isPlacingOrder) {
+                      setIsCartOpen(false);
+                      setIsCheckingOut(false);
+                    }
+                  }}
+                  className="min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center transition-colors duration-150 active:scale-95"
+                  style={{ color: colors.textSecondary }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                {!isCheckingOut ? (
+                  <>
+                    {cartItems.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-sm" style={{ color: colors.textSecondary }}>
+                        <ShoppingCart className="w-10 h-10 mb-2" style={{ color: colors.textTertiary }} />
+                        <p>سبد خرید شما خالی است</p>
+                      </div>
+                    ) : (
+                      <>
+                        {cartItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start gap-3 rounded-2xl border p-4"
+                            style={{ borderColor: colors.border, backgroundColor: colors.card }}
+                          >
+                            {item.image && (
+                              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0" style={{ backgroundColor: colors.input }}>
+                                <Image
+                                  src={item.image}
+                                  alt={item.name}
+                                  width={64}
+                                  height={64}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold line-clamp-2 mb-1" style={{ color: colors.text }}>
+                                {item.name}
+                              </p>
+                              <p className="text-xs mb-2" style={{ color: colors.textSecondary }}>
+                                {formatPrice(item.price)} تومان
+                              </p>
+                              <div className="flex items-center justify-between gap-2">
+                                {/* Quantity controls */}
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateCartQuantity(
+                                        item.id,
+                                        Math.max(1, item.quantity - 1)
+                                      )
+                                    }
+                                    className="min-h-[44px] min-w-[44px] rounded-full border flex items-center justify-center transition-colors duration-150 active:scale-95"
+                                    style={{ borderColor: colors.border, color: colors.text }}
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className="min-w-[28px] text-center text-sm font-medium" style={{ color: colors.text }}>
+                                    {item.quantity}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // Respect stock limits
+                                      const product = [...products, ...services].find((p) => p.id === item.id);
+                                      if (product && product.type === "product" && product.stockQuantity !== null) {
+                                        if (item.quantity >= product.stockQuantity) return;
+                                      }
+                                      updateCartQuantity(item.id, item.quantity + 1);
+                                    }}
+                                    className="min-h-[44px] min-w-[44px] rounded-full border flex items-center justify-center transition-colors duration-150 active:scale-95"
+                                    style={{ borderColor: colors.border, color: colors.text }}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+
+                                {/* Remove */}
+                                <button
+                                  type="button"
+                                  onClick={() => removeItemFromCart(item.id)}
+                                  className="min-h-[44px] px-3 rounded-lg text-sm flex items-center gap-1.5 transition-colors duration-150 active:scale-[0.98]"
+                                  style={{ color: "#F87171" }}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  حذف
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handlePlaceOrder();
+                    }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: colors.text }}>
+                        نام و نام خانوادگی *
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                        style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        required
+                        minLength={2}
+                        disabled={isPlacingOrder}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: colors.text }}>
+                        ایمیل
+                      </label>
+                      <input
+                        type="email"
+                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                        style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        placeholder="example@email.com"
+                        disabled={isPlacingOrder}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: colors.text }}>
+                        شماره تماس *
+                      </label>
+                      <input
+                        type="tel"
+                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                        style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        required
+                        minLength={10}
+                        disabled={isPlacingOrder}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: colors.text }}>
+                        آدرس کامل تحویل *
+                      </label>
+                      <textarea
+                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm resize-none transition-all focus:ring-2"
+                        style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                        rows={3}
+                        value={shippingAddress}
+                        onChange={(e) => setShippingAddress(e.target.value)}
+                        required
+                        minLength={10}
+                        disabled={isPlacingOrder}
+                      />
+                    </div>
+
+                    {checkoutError && (
+                      <div className="p-3 rounded-xl border text-xs" style={{ backgroundColor: "rgba(248,113,113,0.1)", borderColor: "rgba(248,113,113,0.2)", color: "#F87171" }}>
+                        {checkoutError}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-sm pt-2 border-t" style={{ borderColor: colors.border, color: colors.text }}>
+                      <span>مبلغ کل:</span>
+                      <span className="font-bold">
+                        {formatPrice(cartTotalAmount().toString())} تومان
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleBackToCart}
+                        className="flex-1 min-h-[44px] py-3 rounded-xl border text-sm font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
+                        style={{ borderColor: colors.border, color: colors.text }}
+                        disabled={isPlacingOrder}
+                      >
+                        بازگشت به سبد
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 min-h-[44px] py-3 rounded-xl text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 hover:opacity-90 transition-all duration-150 active:scale-[0.98]"
+                        style={{ backgroundColor: themeColor, color: textColor }}
+                        disabled={isPlacingOrder}
+                      >
+                        {isPlacingOrder ? (
+                          <span>در حال انتقال به درگاه...</span>
+                        ) : (
+                          <span>ادامه به پرداخت</span>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Cart footer (summary + checkout) */}
+              {!isCheckingOut && cartItems.length > 0 && (
+                <div className="border-t p-4 space-y-3" style={{ borderColor: colors.border }}>
+                  <div className="flex items-center justify-between text-sm" style={{ color: colors.text }}>
+                    <span>مبلغ کل:</span>
+                    <span className="font-bold text-base">
+                      {formatPrice(cartTotalAmount().toString())} تومان
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={clearCart}
+                      className="flex-1 min-h-[44px] py-3 rounded-xl border text-sm font-medium flex items-center justify-center gap-1 transition-all duration-150 active:scale-[0.98]"
+                      style={{ borderColor: colors.border, color: colors.textSecondary }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      خالی کردن سبد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartCheckout}
+                      className="flex-1 min-h-[44px] py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all duration-150 active:scale-[0.98]"
+                      style={{
+                        backgroundColor: themeColor,
+                        color: textColor,
+                        boxShadow: `0 4px 12px ${themeColor}30`,
+                      }}
+                    >
+                      تسویه حساب
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

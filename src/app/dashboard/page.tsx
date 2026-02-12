@@ -1,31 +1,47 @@
-import AddItemForm from "@/components/AddItemForm";
+import { Suspense } from "react";
+import { getCurrentUserProfile } from "@/app/actions/auth";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
-import Link from "next/link";
+import { items } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import DashboardClient from "./DashboardClient";
+import { DashboardSkeleton } from "./DashboardSkeleton";
 
-export default async function DashboardPage() {
-  // پیدا کردن اولین پروفایل موجود برای تست بدون نیاز به لاگین
-  const profile = await db.query.profiles.findFirst();
-  const sellerId = profile?.id || "00000000-0000-0000-0000-000000000000";
+export default function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ import?: string; count?: string }>;
+}) {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function DashboardContent({
+  searchParams,
+}: {
+  searchParams: Promise<{ import?: string; count?: string }>;
+}) {
+  const profile = await getCurrentUserProfile();
+  if (!profile) redirect("/login");
+
+  const params = await searchParams;
+  const showSuccess = params.import === "success";
+  const importCount = params.count ? parseInt(params.count) : 0;
+
+  const sellerItems = await db.query.items.findMany({
+    where: eq(items.sellerId, profile.id),
+    orderBy: (items, { desc }) => [desc(items.createdAt)],
+  });
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 mb-6">
-        <div className="flex gap-4">
-          <Link
-            href="/dashboard/orders"
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-          >
-            📦 مدیریت سفارش‌ها
-          </Link>
-          <Link
-            href="/dashboard/theme"
-            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors shadow-sm"
-          >
-            🎨 تنظیمات تم
-          </Link>
-        </div>
-      </div>
-      <AddItemForm sellerId={sellerId} />
-    </div>
+    <DashboardClient
+      profile={profile}
+      items={sellerItems}
+      showImportSuccess={showSuccess}
+      importCount={importCount}
+    />
   );
 }

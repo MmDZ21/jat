@@ -1,15 +1,27 @@
-import { db } from "@/db";
+import { Suspense } from "react";
 import { getSellerOrders } from "@/app/actions/order-actions";
+import { getCurrentUserProfile } from "@/app/actions/auth";
+import { redirect } from "next/navigation";
 import OrdersClient from "./OrdersClient";
+import { OrdersSkeleton } from "./OrdersSkeleton";
 
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={<OrdersSkeleton />}>
+      <OrdersContent />
+    </Suspense>
+  );
+}
 
-export default async function OrdersPage() {
-  // پیدا کردن اولین پروفایل موجود برای تست بدون نیاز به لاگین
-  const profile = await db.query.profiles.findFirst();
-  const sellerId = profile?.id || "00000000-0000-0000-0000-000000000000";
+async function OrdersContent() {
+  const profile = await getCurrentUserProfile();
 
-  // Fetch orders for this seller
-  const { orders } = await getSellerOrders(sellerId);
+  if (!profile) {
+    redirect("/login");
+  }
 
-  return <OrdersClient orders={orders} sellerId={sellerId} />;
+  const result = await getSellerOrders();
+  const orders = result.orders ?? [];
+
+  return <OrdersClient orders={orders} />;
 }

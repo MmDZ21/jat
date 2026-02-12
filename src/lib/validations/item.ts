@@ -3,7 +3,7 @@ import { z } from "zod";
 export const itemFormSchema = z
   .object({
     type: z.enum(["product", "service"], {
-      required_error: "نوع محصول الزامی است",
+      message: "نوع محصول الزامی است",
     }),
     name: z
       .string()

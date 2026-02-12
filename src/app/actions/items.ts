@@ -2,65 +2,145 @@
 
 import { db } from "@/db";
 import { items } from "@/db/schema";
-import { itemFormSchema, type ItemFormData } from "@/lib/validations/item";
+import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { getCurrentUserProfile } from "./auth";
+import { itemFormSchema, type ItemFormData } from "@/lib/validations/item";
 
-export async function createItem(
-  sellerId: string,
-  data: ItemFormData
-): Promise<{ success: boolean; error?: string; itemId?: string }> {
+export async function createItem(data: ItemFormData) {
   try {
-    // Validate data
-    const validatedData = itemFormSchema.parse(data);
-
-    // Prepare the item data
-    const itemData = {
-      sellerId,
-      type: validatedData.type,
-      name: validatedData.name,
-      description: validatedData.description || null,
-      price: validatedData.price,
-      currency: "IRT", // Iranian Toman
-      imageUrl: validatedData.imageUrl || null,
-      isActive: validatedData.isActive,
-      tags: validatedData.tags || null,
-      
-      // Product-specific
-      stockQuantity: validatedData.type === "product" ? validatedData.stockQuantity : null,
-      isDigital: validatedData.type === "product" ? (validatedData.isDigital || false) : null,
-      
-      // Service-specific
-      durationMinutes: validatedData.type === "service" ? validatedData.durationMinutes : null,
-    };
-
-    // Insert into database
-    const result = await db.insert(items).values(itemData).returning({ id: items.id });
-    const newItem = result[0];
-
-    if (!newItem?.id) {
-      throw new Error("Failed to create item");
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, error: "کاربر احراز هویت نشده است" };
     }
 
-    // Revalidate the dashboard or items page
-    revalidatePath("/dashboard");
+    const validation = itemFormSchema.safeParse(data);
+    if (!validation.success) {
+      const firstError = validation.error.issues[0];
+      return { success: false, error: firstError?.message || "داده‌های ورودی نامعتبر است" };
+    }
 
-    return {
-      success: true,
-      itemId: newItem.id,
-    };
+    const validated = validation.data;
+
+    await db.insert(items).values({
+      sellerId: profile.id,
+      type: validated.type,
+      name: validated.name,
+      description: validated.description || null,
+      price: validated.price,
+      imageUrl: validated.imageUrl || null,
+      stockQuantity: validated.type === "product" ? validated.stockQuantity ?? 0 : null,
+      isDigital: validated.type === "product" ? validated.isDigital ?? false : false,
+      durationMinutes: validated.type === "service" ? validated.durationMinutes ?? 30 : null,
+      isActive: validated.isActive ?? true,
+      tags: validated.tags || [],
+      currency: "IRT",
+    });
+
+    revalidatePath("/dashboard");
+    const slug = profile.shopSlug || profile.username;
+    if (slug) revalidatePath(`/shop/${slug}`);
+
+    return { success: true };
   } catch (error) {
     console.error("Error creating item:", error);
-    
-    if (error instanceof Error) {
-      return {
-        success: false,
-        error: error.message,
-      };
+    return { success: false, error: "خطایی در ایجاد محصول رخ داد" };
+  }
+}
+
+export async function updateItem(
+  itemId: string,
+  data: {
+    name?: string;
+    description?: string;
+    price?: string;
+    imageUrl?: string;
+    stockQuantity?: number;
+    isDigital?: boolean;
+    durationMinutes?: number;
+    isActive?: boolean;
+  }
+) {
+  try {
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, error: "کاربر احراز هویت نشده است" };
     }
-    
-    return {
-      success: false,
-      error: "خطایی در ایجاد محصول رخ داد",
-    };
+
+    // Only allow updating own items
+    const [updated] = await db
+      .update(items)
+      .set({
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.price !== undefined && { price: data.price }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(data.stockQuantity !== undefined && { stockQuantity: data.stockQuantity }),
+        ...(data.isDigital !== undefined && { isDigital: data.isDigital }),
+        ...(data.durationMinutes !== undefined && { durationMinutes: data.durationMinutes }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(items.id, itemId), eq(items.sellerId, profile.id)))
+      .returning();
+
+    if (!updated) {
+      return { success: false, error: "محصول یافت نشد یا دسترسی ندارید" };
+    }
+
+    revalidatePath("/dashboard");
+    const slug = profile.shopSlug || profile.username;
+    if (slug) revalidatePath(`/shop/${slug}`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating item:", error);
+    return { success: false, error: "خطایی در به‌روزرسانی محصول رخ داد" };
+  }
+}
+
+export async function deleteItem(itemId: string) {
+  try {
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, error: "کاربر احراز هویت نشده است" };
+    }
+
+    const [deleted] = await db
+      .delete(items)
+      .where(and(eq(items.id, itemId), eq(items.sellerId, profile.id)))
+      .returning();
+
+    if (!deleted) {
+      return { success: false, error: "محصول یافت نشد یا دسترسی ندارید" };
+    }
+
+    revalidatePath("/dashboard");
+    const slug = profile.shopSlug || profile.username;
+    if (slug) revalidatePath(`/shop/${slug}`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting item:", error);
+    return { success: false, error: "خطایی در حذف محصول رخ داد" };
+  }
+}
+
+export async function getSellerItems() {
+  try {
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, items: [], error: "کاربر احراز هویت نشده است" };
+    }
+
+    const sellerItems = await db.query.items.findMany({
+      where: eq(items.sellerId, profile.id),
+      orderBy: (items, { desc }) => [desc(items.createdAt)],
+    });
+
+    return { success: true, items: sellerItems };
+  } catch (error) {
+    console.error("Error fetching seller items:", error);
+    return { success: false, items: [], error: "خطا در بارگذاری محصولات" };
   }
 }

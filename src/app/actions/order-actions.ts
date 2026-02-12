@@ -2,8 +2,9 @@
 
 import { db } from "@/db";
 import { orders, orderItems, items, profiles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { getCurrentUserProfile } from "./auth";
 
 // Types
 interface OrderData {
@@ -103,12 +104,11 @@ export async function createOrder(
         }
       }
 
-      // 3. Fetch seller's platform fee percentage
+      // 3. Derive seller from item (do not trust client sellerId)
+      const sellerId = item.sellerId;
+
       const seller = await tx.query.profiles.findFirst({
-        where: eq(profiles.id, orderData.sellerId),
-        columns: {
-          platformFeePercentage: true,
-        },
+        where: eq(profiles.id, sellerId),
       });
 
       if (!seller) {
@@ -123,12 +123,12 @@ export async function createOrder(
       const sellerAmount = subtotal - platformFee;
       const totalAmount = subtotal; // Can add shipping/tax later
 
-      // 5. Create order
+      // 5. Create order (use item.sellerId, not client-provided sellerId)
       const [newOrder] = await tx
         .insert(orders)
         .values({
           orderNumber,
-          sellerId: orderData.sellerId,
+          sellerId,
           customerId: orderData.customerId || null,
           customerName: orderData.customerName.trim(),
           customerEmail: orderData.customerEmail.trim(),
@@ -176,7 +176,6 @@ export async function createOrder(
 
     // Revalidate relevant pages
     revalidatePath("/dashboard");
-    revalidatePath(`/${orderData.sellerId}`);
 
     return {
       success: true,
@@ -216,15 +215,18 @@ export async function generateOrderNumber(): Promise<string> {
 }
 
 /**
- * Fetch all orders for a specific seller with their order items
- * 
- * @param sellerId - The seller's profile ID
- * @returns Array of orders with related order items
+ * Fetch all orders for the current user (seller) with their order items.
+ * Uses auth – do not pass sellerId from client.
  */
-export async function getSellerOrders(sellerId: string) {
+export async function getSellerOrders() {
   try {
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, orders: [], error: "کاربر احراز هویت نشده است" };
+    }
+
     const sellerOrders = await db.query.orders.findMany({
-      where: eq(orders.sellerId, sellerId),
+      where: eq(orders.sellerId, profile.id),
       with: {
         orderItems: true,
       },
@@ -246,23 +248,23 @@ export async function getSellerOrders(sellerId: string) {
 }
 
 /**
- * Update order status
- * 
- * @param orderId - The order ID
- * @param newStatus - The new status to set
- * @returns Success status and updated order
+ * Update order status. Only the order's seller can update.
  */
 export async function updateOrderStatus(
   orderId: string,
   newStatus: "awaiting_approval" | "approved" | "paid" | "processing" | "completed" | "cancelled" | "refunded"
 ) {
   try {
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, error: "کاربر احراز هویت نشده است" };
+    }
+
     const updateData: Record<string, unknown> = {
       status: newStatus,
       updatedAt: new Date(),
     };
 
-    // Set timestamp based on status
     if (newStatus === "approved") {
       updateData.approvedAt = new Date();
     } else if (newStatus === "completed") {
@@ -274,8 +276,12 @@ export async function updateOrderStatus(
     const [updatedOrder] = await db
       .update(orders)
       .set(updateData)
-      .where(eq(orders.id, orderId))
+      .where(and(eq(orders.id, orderId), eq(orders.sellerId, profile.id)))
       .returning();
+
+    if (!updatedOrder) {
+      return { success: false, error: "سفارش یافت نشد یا شما دسترسی ندارید" };
+    }
 
     // Revalidate dashboard pages
     revalidatePath("/dashboard");

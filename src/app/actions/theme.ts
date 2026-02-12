@@ -4,13 +4,20 @@ import { db } from "@/db";
 import { profiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { getCurrentUserProfile } from "./auth";
 
 export async function updateThemeSettings(
-  profileId: string,
+  _profileId: string,
   themeColor: string,
   backgroundMode: "light" | "dark"
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Use authenticated user instead of trusting client-provided profileId
+    const profile = await getCurrentUserProfile();
+    if (!profile) {
+      return { success: false, error: "کاربر احراز هویت نشده است" };
+    }
+
     // Validate hex color format
     const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
     if (!hexColorRegex.test(themeColor)) {
@@ -28,7 +35,7 @@ export async function updateThemeSettings(
       };
     }
 
-    // Update theme settings in database
+    // Update theme settings in database using authenticated profile ID
     await db
       .update(profiles)
       .set({ 
@@ -36,16 +43,12 @@ export async function updateThemeSettings(
         backgroundMode,
         updatedAt: new Date(),
       })
-      .where(eq(profiles.id, profileId));
+      .where(eq(profiles.id, profile.id));
 
-    // Revalidate the profile page
-    const profile = await db.query.profiles.findFirst({
-      where: eq(profiles.id, profileId),
-      columns: { username: true },
-    });
-
-    if (profile) {
-      revalidatePath(`/${profile.username}`);
+    // Revalidate the shop page
+    const slug = profile.shopSlug || profile.username;
+    if (slug) {
+      revalidatePath(`/shop/${slug}`);
     }
 
     return { success: true };
