@@ -12,7 +12,8 @@ interface AddItemFormProps {
   sellerId: string;
 }
 
-export default function AddItemForm({ sellerId }: AddItemFormProps) {
+export default function AddItemForm({ sellerId: _sellerId }: AddItemFormProps) {
+  void _sellerId; // kept for interface compatibility
   const router = useRouter();
   const [itemType, setItemType] = useState<"product" | "service">("product");
   const [isLoading, setIsLoading] = useState(false);
@@ -57,43 +58,27 @@ export default function AddItemForm({ sellerId }: AddItemFormProps) {
     setIsUploading(true);
 
     try {
-      // Create a local preview
+      // Show local preview immediately
       const reader = new FileReader();
       reader.onload = (ev) => {
         setImagePreview(ev.target?.result as string);
       };
       reader.readAsDataURL(file);
 
-      // Upload to Supabase Storage
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
+      // Upload via server-side API route (handles auth + bucket creation)
+      const body = new FormData();
+      body.append("file", file);
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${sellerId}/${Date.now()}.${fileExt}`;
+      const res = await fetch("/api/upload", { method: "POST", body });
+      const data = await res.json();
 
-      const { data, error } = await supabase.storage
-        .from("product-images")
-        .upload(fileName, file, { upsert: true });
-
-      if (error) {
-        // If storage bucket doesn't exist, fallback to URL mode
-        console.warn(
-          "Storage upload failed, user can paste URL instead:",
-          error.message
-        );
-        toast.error(
-          "آپلود تصویر ناموفق بود. لطفاً آدرس URL تصویر را وارد کنید."
-        );
+      if (!res.ok || data.error) {
+        toast.error(data.error || "آپلود تصویر ناموفق بود.");
         setImagePreview(null);
         return;
       }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("product-images")
-        .getPublicUrl(data.path);
-
-      setFormData((prev) => ({ ...prev, imageUrl: urlData.publicUrl }));
+      setFormData((prev) => ({ ...prev, imageUrl: data.url }));
       toast.success("تصویر با موفقیت آپلود شد");
     } catch (error) {
       console.error("Upload error:", error);

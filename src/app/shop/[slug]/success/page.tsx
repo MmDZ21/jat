@@ -10,12 +10,13 @@ interface ShopSuccessPageProps {
   }>;
   searchParams: Promise<{
     order?: string;
+    phone?: string;
   }>;
 }
 
 export default async function ShopSuccessPage({ params, searchParams }: ShopSuccessPageProps) {
   const { slug } = await params;
-  const { order: orderNumber } = await searchParams;
+  const { order: orderNumber, phone } = await searchParams;
 
   const profile = await db.query.profiles.findFirst({
     where: or(
@@ -28,6 +29,11 @@ export default async function ShopSuccessPage({ params, searchParams }: ShopSucc
     notFound();
   }
 
-  return <ShopSuccessClient shopSlug={slug} orderNumber={orderNumber ?? undefined} />;
+  return (
+    <ShopSuccessClient
+      shopSlug={slug}
+      orderNumber={orderNumber ?? undefined}
+      customerPhone={phone ?? undefined}
+    />
+  );
 }
-

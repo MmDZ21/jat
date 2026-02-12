@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { CheckCircle, Copy, Check } from "lucide-react";
+import { CheckCircle, Copy, Check, CalendarDays } from "lucide-react";
 import { useCart } from "@/store/useCart";
 
 interface ShopSuccessClientProps {
   shopSlug?: string;
   orderNumber?: string;
+  customerPhone?: string;
 }
 
-export default function ShopSuccessClient({ shopSlug, orderNumber }: ShopSuccessClientProps) {
+export default function ShopSuccessClient({ shopSlug, orderNumber, customerPhone }: ShopSuccessClientProps) {
   const clearCart = useCart((state) => state.clearCart);
   const [copied, setCopied] = useState(false);
 
@@ -102,16 +103,32 @@ export default function ShopSuccessClient({ shopSlug, orderNumber }: ShopSuccess
           </div>
         )}
 
-        <Link
-          href={shopSlug ? `/shop/${shopSlug}` : "/"}
-          className="inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-          style={{
-            background: "linear-gradient(135deg, #34D399 0%, #10B981 100%)",
-            boxShadow: "0 0 20px rgba(52, 211, 153, 0.2)",
-          }}
-        >
-          {shopSlug ? "بازگشت به فروشگاه" : "بازگشت به صفحه اصلی"}
-        </Link>
+        <div className="flex flex-col gap-3">
+          {customerPhone && (
+            <Link
+              href={`/track?phone=${encodeURIComponent(customerPhone)}`}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: "var(--accent-soft, rgba(139,92,246,0.12))",
+                color: "var(--accent-text, #A78BFA)",
+                border: "1px solid rgba(139,92,246,0.2)",
+              }}
+            >
+              <CalendarDays className="w-5 h-5" />
+              مشاهده نوبت‌های من
+            </Link>
+          )}
+          <Link
+            href={shopSlug ? `/shop/${shopSlug}` : "/"}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(135deg, #34D399 0%, #10B981 100%)",
+              boxShadow: "0 0 20px rgba(52, 211, 153, 0.2)",
+            }}
+          >
+            {shopSlug ? "بازگشت به فروشگاه" : "بازگشت به صفحه اصلی"}
+          </Link>
+        </div>
       </motion.div>
     </div>
   );

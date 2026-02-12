@@ -43,6 +43,27 @@
       "when": 1770784361152,
       "tag": "0005_lethal_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770887097463,
+      "tag": "0006_cloudy_marten_broadcloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770890148620,
+      "tag": "0007_bright_screwball",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1770899612235,
+      "tag": "0008_nice_martin_li",
+      "breakpoints": true
     }
   ]
 }

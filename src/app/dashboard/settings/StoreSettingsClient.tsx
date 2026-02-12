@@ -28,6 +28,7 @@ interface StoreSettingsClientProps {
     themeColor: string;
     backgroundMode: "light" | "dark";
     profileId: string;
+    cancellationWindowHours: number;
   };
 }
 
@@ -54,6 +55,7 @@ export default function StoreSettingsClient({
   const [shopBio, setShopBio] = useState(initial.shopBio);
   const [accentColor, setAccentColor] = useState(initial.accentColor);
   const [isActive, setIsActive] = useState(initial.isActive);
+  const [cancellationWindowHours, setCancellationWindowHours] = useState(initial.cancellationWindowHours);
   const [isStorePending, startStoreTransition] = useTransition();
 
   // ── Theme tab state ──
@@ -77,6 +79,7 @@ export default function StoreSettingsClient({
         accentColor,
         shopBio,
         isActive,
+        cancellationWindowHours,
       });
       if (result.success) {
         toast.success("تنظیمات فروشگاه با موفقیت ذخیره شد.");
@@ -365,6 +368,40 @@ export default function StoreSettingsClient({
                         }}
                       />
                     </button>
+                  </div>
+
+                  {/* Cancellation Window */}
+                  <div>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      بازه لغو نوبت
+                    </label>
+                    <p
+                      className="text-xs mb-3"
+                      style={{ color: "var(--text-tertiary)" }}
+                    >
+                      مشتری تا چند ساعت قبل از نوبت می‌تواند آن را لغو کند؟
+                    </p>
+                    <select
+                      value={cancellationWindowHours}
+                      onChange={(e) => setCancellationWindowHours(Number(e.target.value))}
+                      className="w-full h-11 px-3 rounded-xl text-sm outline-none transition-all"
+                      style={{
+                        backgroundColor: "var(--bg-input)",
+                        border: "1px solid var(--border-subtle)",
+                        color: "var(--text-primary)",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <option value={2}>۲ ساعت قبل</option>
+                      <option value={6}>۶ ساعت قبل</option>
+                      <option value={12}>۱۲ ساعت قبل</option>
+                      <option value={24}>۲۴ ساعت قبل (پیش‌فرض)</option>
+                      <option value={48}>۴۸ ساعت قبل</option>
+                      <option value={72}>۷۲ ساعت قبل</option>
+                    </select>
                   </div>
 
                   {/* Submit */}

@@ -106,13 +106,41 @@ export async function deleteItem(itemId: string) {
       return { success: false, error: "کاربر احراز هویت نشده است" };
     }
 
-    const [deleted] = await db
-      .delete(items)
-      .where(and(eq(items.id, itemId), eq(items.sellerId, profile.id)))
-      .returning();
+    try {
+      // Attempt hard delete first
+      const [deleted] = await db
+        .delete(items)
+        .where(and(eq(items.id, itemId), eq(items.sellerId, profile.id)))
+        .returning();
 
-    if (!deleted) {
-      return { success: false, error: "محصول یافت نشد یا دسترسی ندارید" };
+      if (!deleted) {
+        return { success: false, error: "محصول یافت نشد یا دسترسی ندارید" };
+      }
+    } catch (deleteError: unknown) {
+      // Foreign key constraint (item has orders) → soft-delete instead
+      const pgError = deleteError as { cause?: { code?: string } };
+      if (pgError?.cause?.code === "23503") {
+        const [deactivated] = await db
+          .update(items)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(and(eq(items.id, itemId), eq(items.sellerId, profile.id)))
+          .returning();
+
+        if (!deactivated) {
+          return { success: false, error: "محصول یافت نشد یا دسترسی ندارید" };
+        }
+
+        revalidatePath("/dashboard");
+        const slug = profile.shopSlug || profile.username;
+        if (slug) revalidatePath(`/shop/${slug}`);
+
+        return {
+          success: true,
+          softDeleted: true,
+          message: "این محصول سفارش‌های ثبت‌شده دارد و حذف کامل ممکن نیست. محصول غیرفعال شد و دیگر در فروشگاه نمایش داده نمی‌شود.",
+        };
+      }
+      throw deleteError;
     }
 
     revalidatePath("/dashboard");

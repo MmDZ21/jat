@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
   const isDashboardRoute = request.nextUrl.pathname.startsWith("/dashboard");
   const isOnboardingRoute = request.nextUrl.pathname.startsWith("/onboarding");
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
+  const isMyOrdersRoute = request.nextUrl.pathname.startsWith("/my-orders");
 
   // No user trying to access dashboard -> redirect to login
   if (!user && !isLoginRoute && isDashboardRoute) {
@@ -56,6 +57,17 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // Customer portal: check phone-auth cookie (customer_session JWT)
+  if (isMyOrdersRoute) {
+    const customerToken = request.cookies.get("customer_session")?.value;
+    if (!customerToken) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/track";
+      return NextResponse.redirect(url);
+    }
+    // Token validity is checked at the page/action level via getCustomerPhone()
   }
 
   // User is authenticated - check onboarding status

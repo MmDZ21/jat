@@ -36,6 +36,14 @@ export const paymentStatusEnum = pgEnum("payment_status", [
   "refunded",
 ]);
 
+export const bookingStatusEnum = pgEnum("booking_status", [
+  "pending",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no_show",
+]);
+
 // ============================================================================
 // PROFILES TABLE
 // ============================================================================
@@ -78,6 +86,7 @@ export const profiles = pgTable("profiles", {
   }>(),
   
   leadTimeHours: integer("lead_time_hours").default(24), // Minimum hours before booking
+  cancellationWindowHours: integer("cancellation_window_hours").default(24), // Hours before appointment when cancellation is blocked
   vacationMode: boolean("vacation_mode").default(false),
   vacationMessage: text("vacation_message"), // Custom message during vacation
 
@@ -270,6 +279,72 @@ export const transactions = pgTable("transactions", {
 ]);
 
 // ============================================================================
+// SERVICE AVAILABILITY TABLE
+// ============================================================================
+
+export const serviceAvailability = pgTable("service_availability", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Saturday, 1=Sunday, ... 6=Friday (Persian week)
+  startTime: varchar("start_time", { length: 5 }).notNull(), // "HH:mm"
+  endTime: varchar("end_time", { length: 5 }).notNull(), // "HH:mm"
+  slotDuration: integer("slot_duration").default(30).notNull(), // minutes
+  isBreak: boolean("is_break").default(false).notNull(), // true = break period
+  isActive: boolean("is_active").default(true).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("sa_profile_day_idx").on(table.profileId, table.dayOfWeek),
+]);
+
+// ============================================================================
+// BOOKINGS TABLE
+// ============================================================================
+
+export const bookings = pgTable("bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sellerId: uuid("seller_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id")
+    .notNull()
+    .references(() => items.id, { onDelete: "restrict" }),
+  orderId: uuid("order_id")
+    .references(() => orders.id, { onDelete: "set null" }),
+
+  // Customer Info
+  customerName: varchar("customer_name", { length: 100 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 20 }).notNull(),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  customerNote: text("customer_note"),
+
+  // Timing (stored in UTC)
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
+
+  // Status
+  status: bookingStatusEnum("status").default("pending").notNull(),
+
+  // Timestamps
+  confirmedAt: timestamp("confirmed_at"),
+  completedAt: timestamp("completed_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  cancellationReason: text("cancellation_reason"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("bookings_seller_time_idx").on(table.sellerId, table.startTime, table.endTime),
+  index("bookings_service_time_idx").on(table.serviceId, table.startTime),
+  index("bookings_status_idx").on(table.status),
+  index("bookings_order_id_idx").on(table.orderId),
+]);
+
+// ============================================================================
 // RELATIONS
 // ============================================================================
 
@@ -278,6 +353,8 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   ordersAsSeller: many(orders, { relationName: "seller_orders" }),
   ordersAsCustomer: many(orders, { relationName: "customer_orders" }),
   transactions: many(transactions),
+  serviceAvailability: many(serviceAvailability),
+  bookingsAsSeller: many(bookings, { relationName: "seller_bookings" }),
 }));
 
 export const itemsRelations = relations(items, ({ one, many }) => ({
@@ -286,6 +363,7 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
     references: [profiles.id],
   }),
   orderItems: many(orderItems),
+  bookings: many(bookings),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -301,6 +379,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   }),
   orderItems: many(orderItems),
   transactions: many(transactions),
+  bookings: many(bookings),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
@@ -325,6 +404,46 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
 }));
 
+export const serviceAvailabilityRelations = relations(serviceAvailability, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [serviceAvailability.profileId],
+    references: [profiles.id],
+  }),
+}));
+
+export const bookingsRelations = relations(bookings, ({ one }) => ({
+  seller: one(profiles, {
+    fields: [bookings.sellerId],
+    references: [profiles.id],
+    relationName: "seller_bookings",
+  }),
+  service: one(items, {
+    fields: [bookings.serviceId],
+    references: [items.id],
+  }),
+  order: one(orders, {
+    fields: [bookings.orderId],
+    references: [orders.id],
+  }),
+}));
+
+// ============================================================================
+// PHONE OTP VERIFICATIONS TABLE
+// ============================================================================
+
+export const phoneVerifications = pgTable("phone_verifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  code: varchar("code", { length: 6 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  attempts: integer("attempts").default(0).notNull(), // Rate-limit brute force
+  verified: boolean("verified").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("phone_verif_phone_idx").on(table.phone),
+  index("phone_verif_expires_idx").on(table.expiresAt),
+]);
+
 // ============================================================================
 // TYPE EXPORTS
 // ============================================================================
@@ -343,3 +462,12 @@ export type NewOrderItem = typeof orderItems.$inferInsert;
 
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+
+export type ServiceAvailability = typeof serviceAvailability.$inferSelect;
+export type NewServiceAvailability = typeof serviceAvailability.$inferInsert;
+
+export type Booking = typeof bookings.$inferSelect;
+export type NewBooking = typeof bookings.$inferInsert;
+
+export type PhoneVerification = typeof phoneVerifications.$inferSelect;
+export type NewPhoneVerification = typeof phoneVerifications.$inferInsert;

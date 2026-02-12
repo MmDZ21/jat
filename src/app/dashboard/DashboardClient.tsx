@@ -15,12 +15,15 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Clock,
+  CalendarDays,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { iranYekan } from "@/app/fonts";
 import { updateItem, deleteItem } from "@/app/actions/items";
 import { logout } from "@/app/actions/auth";
 import SuccessBanner from "./SuccessBanner";
+import SalesAnalytics from "./SalesAnalytics";
 import AddItemForm from "@/components/AddItemForm";
 import type { Profile, Item } from "@/db/schema";
 
@@ -169,7 +172,14 @@ export default function DashboardClient({
     startDeleteTransition(async () => {
       const result = await deleteItem(deletingItem.id);
       if (result.success) {
-        toast.success("محصول با موفقیت حذف شد");
+        if ("softDeleted" in result && result.softDeleted) {
+          toast.info(
+            (result as { message?: string }).message ||
+              "محصول غیرفعال شد (سفارش‌های قبلی وجود دارد)"
+          );
+        } else {
+          toast.success("محصول با موفقیت حذف شد");
+        }
         closeDeleteDialog();
         router.refresh();
       } else {
@@ -260,6 +270,8 @@ export default function DashboardClient({
         >
           {[
             { href: "/dashboard/orders", icon: Package, label: "سفارش‌ها" },
+            { href: "/dashboard/availability", icon: Clock, label: "ساعات کاری" },
+            { href: "/dashboard/appointments", icon: CalendarDays, label: "نوبت‌ها" },
             { href: "/dashboard/import", icon: null, label: "ایمپورت" },
             { href: "/dashboard/settings", icon: null, label: "تنظیمات" },
             { href: shopUrl, icon: ExternalLink, label: "مشاهده فروشگاه" },
@@ -288,6 +300,29 @@ export default function DashboardClient({
               {link.label}
             </Link>
           ))}
+        </motion.div>
+
+        {/* ============================================================= */}
+        {/* SALES ANALYTICS                                                */}
+        {/* ============================================================= */}
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          <SalesAnalytics />
+        </motion.div>
+
+        {/* ============================================================= */}
+        {/* ADD ITEM FORM                                                  */}
+        {/* ============================================================= */}
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.12 }}
+          className="mb-8"
+        >
+          <AddItemForm sellerId={profile.id} />
         </motion.div>
 
         {/* ============================================================= */}
@@ -324,7 +359,7 @@ export default function DashboardClient({
                 className="text-sm mt-1"
                 style={{ color: "var(--text-tertiary)" }}
               >
-                از فرم پایین برای افزودن اولین محصول استفاده کنید
+                از فرم بالا برای افزودن اولین محصول استفاده کنید
               </p>
             </div>
           ) : (
@@ -501,11 +536,6 @@ export default function DashboardClient({
             </div>
           )}
         </section>
-
-        {/* ============================================================= */}
-        {/* ADD ITEM FORM                                                  */}
-        {/* ============================================================= */}
-        <AddItemForm sellerId={profile.id} />
       </div>
 
       {/* ================================================================= */}

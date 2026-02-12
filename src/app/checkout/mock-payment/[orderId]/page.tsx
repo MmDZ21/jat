@@ -60,22 +60,24 @@ async function handlePaymentSuccess(formData: FormData) {
       })
       .where(eq(orders.id, orderId));
 
-    return { shopSlug: slug, orderNumber: existingOrder.orderNumber };
+    return { shopSlug: slug, orderNumber: existingOrder.orderNumber, customerPhone: existingOrder.customerPhone };
   });
 
   if (!result.shopSlug) {
-    const params = result.orderNumber
-      ? `?order=${encodeURIComponent(result.orderNumber)}`
-      : "";
-    redirect(`/checkout/success${params}`);
+    const params = new URLSearchParams();
+    if (result.orderNumber) params.set("order", result.orderNumber);
+    if (result.customerPhone) params.set("phone", result.customerPhone);
+    const qs = params.toString();
+    redirect(`/checkout/success${qs ? `?${qs}` : ""}`);
   }
 
   revalidatePath(`/shop/${result.shopSlug}`);
 
-  const successUrl = result.orderNumber
-    ? `/shop/${result.shopSlug}/success?order=${encodeURIComponent(result.orderNumber)}`
-    : `/shop/${result.shopSlug}/success`;
-  redirect(successUrl);
+  const params = new URLSearchParams();
+  if (result.orderNumber) params.set("order", result.orderNumber);
+  if (result.customerPhone) params.set("phone", result.customerPhone);
+  const qs = params.toString();
+  redirect(`/shop/${result.shopSlug}/success${qs ? `?${qs}` : ""}`);
 }
 
 async function handlePaymentFailed(formData: FormData) {

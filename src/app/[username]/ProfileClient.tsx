@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Package, Briefcase, Clock, ShoppingCart, X, Trash2, Plus, Minus, AlertCircle, Search } from "lucide-react";
+import { Package, Briefcase, Clock, ShoppingCart, X, Trash2, Plus, Minus, AlertCircle, Search, LayoutGrid, List, SlidersHorizontal, ArrowUpDown, ChevronDown, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import type { Profile, Item } from "@/db/schema";
 import { useCart } from "@/store/useCart";
+import BookingModal from "@/components/BookingModal";
 
 interface ProfileClientProps {
   profile: Profile & { items: Item[] };
@@ -22,16 +23,30 @@ export default function ProfileClient({ profile, products, services, paymentStat
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<"products" | "services">("products");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"default" | "price-asc" | "price-desc" | "name">("default");
+  const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "unavailable">("all");
+  const [showFilters, setShowFilters] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Booking modal state
+  const [bookingService, setBookingService] = useState<Item | null>(null);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
 
   // Checkout form state
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [shippingAddress, setShippingAddress] = useState("");
+  // Structured address fields
+  const [province, setProvince] = useState("");
+  const [city, setCity] = useState("");
+  const [street, setStreet] = useState("");
+  const [plaque, setPlaque] = useState("");
+  const [unit, setUnit] = useState("");
+  const [postalCode, setPostalCode] = useState("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isPlacingOrder, startPlaceOrder] = useTransition();
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
@@ -159,13 +174,23 @@ export default function ProfileClient({ profile, products, services, paymentStat
       try {
         const { createOrder } = await import("@/app/actions/shop-checkout");
 
+        // Combine structured address into a single string for storage
+        const fullAddress = [
+          province && `استان ${province}`,
+          city && `شهر ${city}`,
+          street,
+          plaque && `پلاک ${plaque}`,
+          unit && `واحد ${unit}`,
+          postalCode && `کد پستی: ${postalCode}`,
+        ].filter(Boolean).join("، ");
+
         const result = await createOrder({
           sellerId: profile.id,
           shopSlug: profile.shopSlug || profile.username,
           customerName,
           customerEmail,
           customerPhone,
-          shippingAddress,
+          shippingAddress: fullAddress,
           items: cartItems.map((item) => ({
             id: item.id,
             name: item.name,
@@ -323,11 +348,12 @@ export default function ProfileClient({ profile, products, services, paymentStat
           </motion.div>
         )}
 
+        {/* Tabs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex gap-2 mb-6 rounded-2xl p-1.5 shadow-sm"
+          className="flex gap-2 mb-3 rounded-2xl p-1.5 shadow-sm"
           style={{
             backgroundColor: colors.primary,
             borderColor: colors.border,
@@ -394,16 +420,219 @@ export default function ProfileClient({ profile, products, services, paymentStat
           </button>
         </motion.div>
 
-        {/* Items List */}
+        {/* View Toggle + Filter Toggle */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
+          className="flex items-center justify-between mb-3"
+        >
+          {/* Filter Toggle Button */}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium transition-all duration-200 active:scale-[0.95]"
+            style={{
+              backgroundColor: showFilters ? `${themeColor}15` : colors.primary,
+              color: showFilters ? themeColor : colors.textSecondary,
+              borderWidth: 1,
+              borderColor: showFilters ? `${themeColor}40` : colors.border,
+            }}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>فیلتر و مرتب‌سازی</span>
+            <ChevronDown 
+              className="w-3 h-3 transition-transform duration-200"
+              style={{ transform: showFilters ? "rotate(180deg)" : "rotate(0deg)" }}
+            />
+          </button>
+
+          {/* View Toggle */}
+          <div
+            className="flex rounded-xl p-1 shadow-sm"
+            style={{
+              backgroundColor: colors.primary,
+              borderColor: colors.border,
+              borderWidth: 1,
+            }}
+          >
+            <button
+              onClick={() => setViewMode("grid")}
+              className="h-9 w-9 flex items-center justify-center rounded-lg transition-all duration-200 active:scale-[0.95]"
+              style={{
+                backgroundColor: viewMode === "grid" ? themeColor : "transparent",
+                color: viewMode === "grid" ? textColor : colors.textSecondary,
+                boxShadow: viewMode === "grid"
+                  ? backgroundMode === "dark"
+                    ? `0 4px 8px ${themeColor}40`
+                    : `0 4px 8px ${shadowColor}`
+                  : "none",
+              }}
+              title="نمای شبکه‌ای"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className="h-9 w-9 flex items-center justify-center rounded-lg transition-all duration-200 active:scale-[0.95]"
+              style={{
+                backgroundColor: viewMode === "list" ? themeColor : "transparent",
+                color: viewMode === "list" ? textColor : colors.textSecondary,
+                boxShadow: viewMode === "list"
+                  ? backgroundMode === "dark"
+                    ? `0 4px 8px ${themeColor}40`
+                    : `0 4px 8px ${shadowColor}`
+                  : "none",
+              }}
+              title="نمای لیستی"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Filter & Sort Panel */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-hidden mb-4"
+            >
+              <div
+                className="rounded-2xl p-4 space-y-3"
+                style={{
+                  backgroundColor: colors.card,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                {/* Sort */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium mb-2" style={{ color: colors.textSecondary }}>
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    مرتب‌سازی
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: "default", label: "پیش‌فرض" },
+                      { value: "price-asc", label: "ارزان‌ترین" },
+                      { value: "price-desc", label: "گران‌ترین" },
+                      { value: "name", label: "نام (الفبا)" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setSortBy(opt.value)}
+                        className="h-9 px-3 rounded-xl text-xs font-medium transition-all duration-150 active:scale-[0.97]"
+                        style={{
+                          backgroundColor: sortBy === opt.value ? themeColor : `${colors.textSecondary}10`,
+                          color: sortBy === opt.value ? textColor : colors.textSecondary,
+                          boxShadow: sortBy === opt.value
+                            ? backgroundMode === "dark"
+                              ? `0 2px 6px ${themeColor}40`
+                              : `0 2px 6px ${shadowColor}`
+                            : "none",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Availability Filter */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium mb-2" style={{ color: colors.textSecondary }}>
+                    <Package className="w-3.5 h-3.5" />
+                    موجودی
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { value: "all", label: "همه" },
+                      { value: "available", label: "موجود" },
+                      { value: "unavailable", label: "ناموجود" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setFilterAvailability(opt.value)}
+                        className="h-9 px-3 rounded-xl text-xs font-medium transition-all duration-150 active:scale-[0.97]"
+                        style={{
+                          backgroundColor: filterAvailability === opt.value ? themeColor : `${colors.textSecondary}10`,
+                          color: filterAvailability === opt.value ? textColor : colors.textSecondary,
+                          boxShadow: filterAvailability === opt.value
+                            ? backgroundMode === "dark"
+                              ? `0 2px 6px ${themeColor}40`
+                              : `0 2px 6px ${shadowColor}`
+                            : "none",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reset */}
+                {(sortBy !== "default" || filterAvailability !== "all") && (
+                  <button
+                    onClick={() => { setSortBy("default"); setFilterAvailability("all"); }}
+                    className="text-xs underline transition-colors"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    بازنشانی فیلترها
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Items */}
         <div className="relative grid">
           {(["products", "services"] as const).map((tab) => {
             const allTabItems = tab === "products" ? products : services;
-            const tabItems = searchQuery.trim()
+
+            // 1) Search filter
+            let tabItems = searchQuery.trim()
               ? allTabItems.filter((item) =>
                   item.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
                   (item.description || "").toLowerCase().includes(searchQuery.trim().toLowerCase())
                 )
-              : allTabItems;
+              : [...allTabItems];
+
+            // 2) Availability filter
+            if (filterAvailability === "available") {
+              tabItems = tabItems.filter((item) =>
+                item.type === "service" || (item.stockQuantity !== null && item.stockQuantity > 0)
+              );
+            } else if (filterAvailability === "unavailable") {
+              tabItems = tabItems.filter((item) =>
+                item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0)
+              );
+            }
+
+            // 3) Sort: available first by default, then apply chosen sort
+            tabItems.sort((a, b) => {
+              // Always push unavailable products to bottom
+              const aAvailable = a.type === "service" || (a.stockQuantity !== null && a.stockQuantity > 0);
+              const bAvailable = b.type === "service" || (b.stockQuantity !== null && b.stockQuantity > 0);
+              if (aAvailable && !bAvailable) return -1;
+              if (!aAvailable && bAvailable) return 1;
+
+              // Then apply sort
+              switch (sortBy) {
+                case "price-asc":
+                  return parseFloat(a.price) - parseFloat(b.price);
+                case "price-desc":
+                  return parseFloat(b.price) - parseFloat(a.price);
+                case "name":
+                  return a.name.localeCompare(b.name, "fa");
+                default:
+                  return 0;
+              }
+            });
+
             const isActive = activeTab === tab;
 
             return (
@@ -419,11 +648,15 @@ export default function ProfileClient({ profile, products, services, paymentStat
                   ease: "easeInOut",
                   delay: isActive ? 0.15 : 0,
                 }}
-                className="col-start-1 row-start-1 space-y-3"
+                className={`col-start-1 row-start-1 ${
+                  viewMode === "grid"
+                    ? "grid grid-cols-2 gap-3"
+                    : "space-y-3"
+                }`}
                 style={{ pointerEvents: isActive ? "auto" : "none" }}
               >
             {tabItems.length === 0 ? (
-              <div className="text-center py-12">
+              <div className={`text-center py-12 ${viewMode === "grid" ? "col-span-2" : ""}`}>
                 <div 
                   className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
                   style={{ backgroundColor: `${colors.textSecondary}20` }}
@@ -440,7 +673,8 @@ export default function ProfileClient({ profile, products, services, paymentStat
                     : "هیچ خدمتی موجود نیست"}
                 </p>
               </div>
-            ) : (
+            ) : viewMode === "list" ? (
+              /* ===== LIST VIEW ===== */
               tabItems.map((item) => (
                 <div
                   key={item.id}
@@ -563,7 +797,7 @@ export default function ProfileClient({ profile, products, services, paymentStat
                         )}
                       </div>
 
-                      {/* Price + Add to Cart */}
+                      {/* Price + Action */}
                       <div className="mt-auto pt-2 border-t" style={{ borderColor: colors.border }}>
                         <div className="flex items-center justify-between gap-3 pt-2">
                           <p 
@@ -572,7 +806,20 @@ export default function ProfileClient({ profile, products, services, paymentStat
                           >
                             {formatPrice(item.price)} تومان
                           </p>
-                          {item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0) ? (
+                          {item.type === "service" ? (
+                            <button
+                              type="button"
+                              onClick={() => { setBookingService(item); setIsBookingOpen(true); }}
+                              className="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
+                              style={{
+                                backgroundColor: themeColor,
+                                color: textColor,
+                              }}
+                            >
+                              <CalendarDays className="w-4 h-4" />
+                              رزرو نوبت
+                            </button>
+                          ) : item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0) ? (
                             <button
                               type="button"
                               disabled
@@ -595,6 +842,148 @@ export default function ProfileClient({ profile, products, services, paymentStat
                           )}
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              /* ===== GRID VIEW ===== */
+              tabItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border transition-all duration-200 cursor-pointer group overflow-hidden flex flex-col"
+                  style={{
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    boxShadow: backgroundMode === "dark"
+                      ? `0 0 0 1px ${colors.border}, 0 2px 8px rgba(0,0,0,0.3)`
+                      : "0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0,0,0,0.04)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = colors.cardHover;
+                    e.currentTarget.style.borderColor = `${themeColor}60`;
+                    e.currentTarget.style.boxShadow = backgroundMode === "dark"
+                      ? `0 0 0 1px ${themeColor}30, 0 4px 12px rgba(0,0,0,0.4)`
+                      : `0 4px 12px rgba(0,0,0,0.08), 0 0 0 1px ${themeColor}30`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = colors.card;
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.boxShadow = backgroundMode === "dark"
+                      ? `0 0 0 1px ${colors.border}, 0 2px 8px rgba(0,0,0,0.3)`
+                      : "0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0,0,0,0.04)";
+                  }}
+                >
+                  {/* Grid Image */}
+                  <div 
+                    className="relative w-full aspect-square overflow-hidden"
+                    style={{ backgroundColor: `${colors.textSecondary}10` }}
+                  >
+                    {item.imageUrl ? (
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.name}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        sizes="(max-width: 768px) 50vw, 300px"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        {item.type === "product" ? (
+                          <Package className="w-10 h-10" style={{ color: colors.textTertiary }} />
+                        ) : (
+                          <Briefcase className="w-10 h-10" style={{ color: colors.textTertiary }} />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Stock badge */}
+                    {item.type === "product" && item.stockQuantity !== null && item.stockQuantity <= 0 && (
+                      <div className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg">
+                        ناموجود
+                      </div>
+                    )}
+
+                    {/* Digital badge */}
+                    {item.type === "product" && item.isDigital && (
+                      <div className="absolute top-2 left-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg">
+                        دیجیتال
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Grid Content */}
+                  <div className="p-3 flex flex-col flex-1">
+                    {/* Name */}
+                    <h3 
+                      className="font-bold text-sm mb-1 line-clamp-2"
+                      style={{ 
+                        color: colors.text,
+                        overflowWrap: "break-word",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {item.name}
+                    </h3>
+
+                    {/* Service duration */}
+                    {item.type === "service" && item.durationMinutes && (
+                      <div className="flex items-center gap-1 text-[11px] mb-1" style={{ color: colors.textSecondary }}>
+                        <Clock className="w-3 h-3" />
+                        <span>{item.durationMinutes} دقیقه</span>
+                      </div>
+                    )}
+
+                    {/* Stock info */}
+                    {item.type === "product" && item.stockQuantity !== null && item.stockQuantity > 0 && (
+                      <div className="flex items-center gap-1 text-[11px] mb-1" style={{ color: colors.textSecondary }}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        <span>{item.stockQuantity} عدد موجود</span>
+                      </div>
+                    )}
+
+                    {/* Price + Action */}
+                    <div className="mt-auto pt-2 border-t" style={{ borderColor: colors.border }}>
+                      <p 
+                        className="font-bold text-sm mb-2"
+                        style={{ color: themeColor }}
+                      >
+                        {formatPrice(item.price)} تومان
+                      </p>
+                      {item.type === "service" ? (
+                        <button
+                          type="button"
+                          onClick={() => { setBookingService(item); setIsBookingOpen(true); }}
+                          className="w-full min-h-[44px] py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
+                          style={{
+                            backgroundColor: themeColor,
+                            color: textColor,
+                          }}
+                        >
+                          <CalendarDays className="w-4 h-4" />
+                          رزرو نوبت
+                        </button>
+                      ) : item.type === "product" && (item.stockQuantity === null || item.stockQuantity <= 0) ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full min-h-[44px] py-2.5 rounded-xl text-sm font-medium bg-gray-300 text-gray-500 cursor-not-allowed"
+                        >
+                          ناموجود
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleAddToCart(item)}
+                          className="w-full min-h-[44px] py-2.5 rounded-xl text-sm font-medium transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
+                          style={{
+                            backgroundColor: themeColor,
+                            color: textColor,
+                          }}
+                        >
+                          {justAddedId === item.id ? "✓ افزوده شد" : "افزودن به سبد"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -871,20 +1260,100 @@ export default function ProfileClient({ profile, products, services, paymentStat
                         disabled={isPlacingOrder}
                       />
                     </div>
+                    {/* Structured address fields */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                          استان *
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                          style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                          placeholder="مثلاً تهران"
+                          value={province}
+                          onChange={(e) => setProvince(e.target.value)}
+                          required
+                          disabled={isPlacingOrder}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                          شهر *
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                          style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                          placeholder="مثلاً تهران"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          required
+                          disabled={isPlacingOrder}
+                        />
+                      </div>
+                    </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: colors.text }}>
-                        آدرس کامل تحویل *
+                      <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                        آدرس (خیابان و کوچه) *
                       </label>
-                      <textarea
-                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm resize-none transition-all focus:ring-2"
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
                         style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
-                        rows={3}
-                        value={shippingAddress}
-                        onChange={(e) => setShippingAddress(e.target.value)}
+                        placeholder="مثلاً خیابان ولیعصر، کوچه سوم"
+                        value={street}
+                        onChange={(e) => setStreet(e.target.value)}
                         required
-                        minLength={10}
+                        minLength={5}
                         disabled={isPlacingOrder}
                       />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                          پلاک *
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                          style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                          placeholder="۱۲۳"
+                          value={plaque}
+                          onChange={(e) => setPlaque(e.target.value)}
+                          required
+                          disabled={isPlacingOrder}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                          واحد
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                          style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                          placeholder="۵"
+                          value={unit}
+                          onChange={(e) => setUnit(e.target.value)}
+                          disabled={isPlacingOrder}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: colors.textSecondary }}>
+                          کد پستی
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2.5 rounded-xl border outline-none text-sm transition-all focus:ring-2"
+                          style={{ backgroundColor: colors.input, borderColor: colors.border, color: colors.text }}
+                          placeholder="۱۲۳۴۵۶۷۸۹۰"
+                          value={postalCode}
+                          onChange={(e) => setPostalCode(e.target.value)}
+                          maxLength={10}
+                          disabled={isPlacingOrder}
+                        />
+                      </div>
                     </div>
 
                     {checkoutError && (
@@ -965,6 +1434,26 @@ export default function ProfileClient({ profile, products, services, paymentStat
           </>
         )}
       </AnimatePresence>
+
+      {/* Booking Modal */}
+      {bookingService && (
+        <BookingModal
+          isOpen={isBookingOpen}
+          onClose={() => { setIsBookingOpen(false); setBookingService(null); }}
+          service={{
+            id: bookingService.id,
+            name: bookingService.name,
+            price: bookingService.price,
+            durationMinutes: bookingService.durationMinutes,
+            sellerId: profile.id,
+          }}
+          themeColor={themeColor}
+          textColor={textColor}
+          backgroundMode={backgroundMode}
+          colors={colors}
+          formatPrice={formatPrice}
+        />
+      )}
     </div>
   );
 }

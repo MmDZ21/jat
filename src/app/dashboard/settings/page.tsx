@@ -16,6 +16,7 @@ export default async function SettingsPage() {
         themeColor: profile.themeColor || "#3b82f6",
         backgroundMode: (profile.backgroundMode as "light" | "dark") || "light",
         profileId: profile.id,
+        cancellationWindowHours: profile.cancellationWindowHours ?? 24,
       }}
     />
   );

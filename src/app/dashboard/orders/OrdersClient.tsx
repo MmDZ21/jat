@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { updateOrderStatus } from "@/app/actions/order-actions";
 import { iranYekan } from "@/app/fonts";
 import { toast } from "sonner";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Package } from "lucide-react";
+import ConfirmModal from "@/components/ConfirmModal";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -159,13 +160,51 @@ const expandVariants = {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  Order confirm modal descriptions                                    */
+/* ------------------------------------------------------------------ */
+
+const ORDER_STATUS_META: Record<OrderStatus, { title: string; description: string; variant: "danger" | "warning" | "accent" | "success"; label: string }> = {
+  awaiting_approval: { title: "در انتظار تایید", description: "", variant: "warning", label: "تأیید" },
+  approved: { title: "تایید سفارش", description: "آیا از تایید این سفارش مطمئن هستید؟ مشتری از تایید سفارش مطلع خواهد شد.", variant: "accent", label: "بله، تایید کن" },
+  paid: { title: "پرداخت شده", description: "آیا پرداخت این سفارش را تایید می‌کنید؟", variant: "success", label: "بله، تایید پرداخت" },
+  processing: { title: "شروع آماده‌سازی", description: "آیا آماده‌سازی این سفارش را شروع می‌کنید؟", variant: "accent", label: "بله، شروع آماده‌سازی" },
+  completed: { title: "تکمیل سفارش", description: "آیا این سفارش با موفقیت تکمیل شده است؟", variant: "success", label: "بله، تکمیل شد" },
+  cancelled: { title: "لغو سفارش", description: "آیا از لغو این سفارش مطمئن هستید؟ این عمل قابل بازگشت نیست.", variant: "danger", label: "بله، لغو کن" },
+  refunded: { title: "بازگشت وجه", description: "آیا از بازگشت وجه این سفارش مطمئن هستید؟", variant: "warning", label: "بله، بازگشت وجه" },
+};
+
 export default function OrdersClient({ orders }: OrdersClientProps) {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
 
-  /* ---------- handlers (preserved) ---------- */
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    newStatus: OrderStatus;
+  }>({ isOpen: false, orderId: "", newStatus: "awaiting_approval" });
 
-  const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
+  // Ref to store the pending action — immune to stale closures
+  const pendingActionRef = useRef<{ orderId: string; newStatus: OrderStatus } | null>(null);
+
+  /* ---------- handlers ---------- */
+
+  // Opens confirm modal instead of directly changing status
+  const requestStatusUpdate = (orderId: string, newStatus: OrderStatus) => {
+    pendingActionRef.current = { orderId, newStatus };
+    setConfirmModal({ isOpen: true, orderId, newStatus });
+  };
+
+  // Executes the confirmed status change
+  const executeStatusUpdate = async () => {
+    const action = pendingActionRef.current;
+    if (!action) return;
+    const { orderId, newStatus } = action;
+    pendingActionRef.current = null;
+
+    setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+
     setIsUpdating(orderId);
     try {
       const result = await updateOrderStatus(orderId, newStatus);
@@ -590,7 +629,7 @@ export default function OrdersClient({ orders }: OrdersClientProps) {
                         return (
                           <button
                             key={action}
-                            onClick={() => handleStatusUpdate(order.id, action)}
+                            onClick={() => requestStatusUpdate(order.id, action)}
                             disabled={isLoading}
                             style={{
                               display: "inline-flex",
@@ -767,6 +806,18 @@ export default function OrdersClient({ orders }: OrdersClientProps) {
           </motion.div>
         )}
       </div>
+
+      {/* Confirm Modal for status changes */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={ORDER_STATUS_META[confirmModal.newStatus]?.title || "تغییر وضعیت"}
+        description={ORDER_STATUS_META[confirmModal.newStatus]?.description || "آیا مطمئن هستید؟"}
+        confirmLabel={ORDER_STATUS_META[confirmModal.newStatus]?.label || "تأیید"}
+        variant={ORDER_STATUS_META[confirmModal.newStatus]?.variant || "accent"}
+        isLoading={!!isUpdating}
+        onConfirm={executeStatusUpdate}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }
